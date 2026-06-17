@@ -51,7 +51,11 @@ class IsolationManager(
     }
 
     fun onSessionEnd(isolationId: String, visitedUrls: Set<String>) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Profiles auto-persist, but cookies are only guaranteed on disk after an explicit
+            // flush — without it a session can be lost across app/process restarts (and not shared).
+            scope.launch { WebViewProfileManager.flush(isolationId) }
+        } else {
             scope.launch { cookieJarManager.saveAndClearFor(isolationId, visitedUrls) }
         }
     }

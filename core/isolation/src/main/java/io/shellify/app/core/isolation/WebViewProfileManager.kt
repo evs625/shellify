@@ -32,6 +32,20 @@ object WebViewProfileManager {
         // we silently fall back — CookieJarManager handles the API < 33 path.
     }
 
+    /**
+     * Persists the profile's cookies to disk so a session survives the WebView/Activity being
+     * torn down. Without this a login made in one app may not be visible to another app sharing
+     * the same profile (shared-space category) after a process restart.
+     */
+    suspend fun flush(isolationId: String) {
+        val store = runCatching { ProfileStore.getInstance() }.getOrNull() ?: return
+        runCatching {
+            withContext(Dispatchers.IO) {
+                store.getOrCreateProfile("pwa_$isolationId").cookieManager.flush()
+            }
+        }
+    }
+
     suspend fun deleteProfile(isolationId: String) {
         val profileName = "pwa_$isolationId"
         val store = runCatching { ProfileStore.getInstance() }.getOrNull() ?: return
