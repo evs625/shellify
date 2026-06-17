@@ -54,6 +54,7 @@
     <string name="add_url_label">URL du site</string>
     <string name="add_url_hint">https://exemple.com</string>
     <string name="add_name_label">Nom de l\'application</string>
+    <string name="add_category_none">Sans catégorie</string>
     <string name="add_analyze_button">Analyser</string>
     <string name="add_analyzing">Analyse en cours…</string>
     <string name="add_save">Enregistrer</string>

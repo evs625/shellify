@@ -66,6 +66,7 @@
     <string name="add_url_label">Website URL</string>
     <string name="add_url_hint">https://example.com</string>
     <string name="add_name_label">App name</string>
+    <string name="add_category_none">Uncategorized</string>
     <string name="add_analyze_button">Analyze</string>
     <string name="add_analyzing">Analyzing…</string>
     <string name="add_save">Save</string>

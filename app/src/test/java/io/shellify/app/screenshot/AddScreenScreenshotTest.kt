@@ -7,6 +7,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.shellify.app.core.engine.GeckoEngineManager
 import io.shellify.app.core.engine.GeckoInstallState
+import io.shellify.app.domain.model.Category
 import io.shellify.app.presentation.add.AddScreen
 import io.shellify.app.presentation.add.AddUiState
 import io.shellify.app.presentation.add.AddViewModel
@@ -33,6 +34,7 @@ class AddScreenScreenshotTest {
         }
         return mockk<AddViewModel>(relaxed = true).also {
             every { it.uiState } returns MutableStateFlow(state)
+            every { it.categories } returns MutableStateFlow(emptyList<Category>())
             every { it.geckoEngineManager } returns gecko
         }
     }

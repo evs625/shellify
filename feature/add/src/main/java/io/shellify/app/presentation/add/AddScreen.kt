@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.GTranslate
 import androidx.compose.material.icons.filled.Link
@@ -115,6 +116,7 @@ import io.shellify.app.core.iconpack.SimpleIconEntry
 import io.shellify.app.domain.model.EngineType
 import io.shellify.app.core.engine.GeckoInstallState
 import io.shellify.app.core.shortcut.PwaShortcutManager
+import io.shellify.app.domain.model.Category
 import io.shellify.app.domain.model.LockType
 import io.shellify.app.domain.model.PwaManifest
 import io.shellify.app.domain.model.TranslateLanguage
@@ -144,6 +146,7 @@ fun AddScreen(
     onBack: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
+    val categories by viewModel.categories.collectAsState()
     val geckoInstallState by viewModel.geckoEngineManager.installState.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -332,6 +335,15 @@ fun AddScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(Dimens.cornerLg),
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                )
+
+                Spacer(Modifier.height(Dimens.spaceSm))
+
+                // 2b. Category
+                CategoryDropdown(
+                    categories = categories,
+                    selectedId = state.categoryId,
+                    onSelect = viewModel::setCategoryId,
                 )
 
                 Spacer(Modifier.height(Dimens.spaceLg))
@@ -1062,6 +1074,42 @@ private fun SubToggleRow(
         }
         Spacer(Modifier.width(Dimens.spaceLg))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoryDropdown(
+    categories: List<Category>,
+    selectedId: Long?,
+    onSelect: (Long?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val noneLabel = stringResource(R.string.add_category_none)
+    val selectedName = categories.firstOrNull { it.id == selectedId }?.name ?: noneLabel
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = selectedName, onValueChange = {}, readOnly = true,
+            label = { Text(stringResource(R.string.add_category_label)) },
+            leadingIcon = { Icon(Icons.Default.Folder, null, modifier = Modifier.size(Dimens.sizeMd)) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+            shape = RoundedCornerShape(Dimens.cornerLg),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(noneLabel) },
+                onClick = { onSelect(null); expanded = false },
+            )
+            categories.forEach { category ->
+                DropdownMenuItem(
+                    text = { Text(category.name) },
+                    onClick = { onSelect(category.id); expanded = false },
+                )
+            }
+        }
     }
 }
 

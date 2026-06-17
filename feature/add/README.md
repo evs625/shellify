@@ -10,6 +10,7 @@
 
 - Accept a URL, analyze its PWA manifest, and pre-fill name, icon, and colors.
 - Allow the user to override any auto-detected value.
+- Assign the app to a category (or leave it uncategorized) via a dropdown fed by `GetCategoriesUseCase`; persisted as `WebApp.categoryId`.
 - Let the user pick an icon from the bundled Simple Icons catalogue or supply a custom URL.
 - Persist the result via `SaveWebApp` use case and return to the previous screen.
 - Support deep-link entry (`shellify://add?url=...`) for share-into-Shellify flows.

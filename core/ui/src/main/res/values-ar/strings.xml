@@ -54,6 +54,7 @@
     <string name="add_url_label">رابط الموقع</string>
     <string name="add_url_hint">https://example.com</string>
     <string name="add_name_label">اسم التطبيق</string>
+    <string name="add_category_none">بدون فئة</string>
     <string name="add_analyze_button">تحليل</string>
     <string name="add_analyzing">جارٍ التحليل…</string>
     <string name="add_save">حفظ</string>

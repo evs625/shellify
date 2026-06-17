@@ -247,6 +247,7 @@ fun AppNavigation(
                             app.geckoEngineManager,
                             app.exportNetworkLogs,
                             app.getNetworkLog,
+                            app.getCategories,
                         )
                     },
                     onBack = { navController.popBackStack() },

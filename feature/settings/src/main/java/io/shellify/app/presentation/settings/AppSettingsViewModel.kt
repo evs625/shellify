@@ -23,17 +23,21 @@ import io.shellify.app.domain.model.NotificationChannelId
 import io.shellify.app.domain.model.NotificationPermission
 import io.shellify.app.domain.model.TranslateLanguage
 import io.shellify.app.domain.model.WebApp
+import io.shellify.app.domain.model.Category
 import io.shellify.app.domain.usecase.DeleteWebAppUseCase
 import io.shellify.app.domain.usecase.ExportNetworkLogsUseCase
+import io.shellify.app.domain.usecase.GetCategoriesUseCase
 import io.shellify.app.domain.usecase.GetNetworkLogUseCase
 import io.shellify.app.domain.usecase.GetWebAppByIdUseCase
 import io.shellify.app.domain.usecase.SaveWebAppUseCase
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -79,6 +83,7 @@ class AppSettingsViewModel(
     val geckoEngineManager: GeckoEngineManager,
     private val exportNetworkLog: ExportNetworkLogsUseCase,
     private val getNetworkLog: GetNetworkLogUseCase,
+    getCategories: GetCategoriesUseCase,
     private val isGlobalNotificationsEnabled: () -> Boolean = {
         androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
     },
@@ -93,6 +98,9 @@ class AppSettingsViewModel(
 
     private val _commands = MutableSharedFlow<AppSettingsCommand>(extraBufferCapacity = 1)
     val commands: SharedFlow<AppSettingsCommand> = _commands
+
+    val categories: StateFlow<List<Category>> = getCategories()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         viewModelScope.launch {
@@ -135,6 +143,7 @@ class AppSettingsViewModel(
 
     fun setName(name: String) = update { it.copy(name = name) }
     fun setUrl(url: String) = update { it.copy(url = url) }
+    fun setCategoryId(id: Long?) = update { it.copy(categoryId = id) }
     fun setThemeColor(color: String?) {
         update { it.copy(themeColor = color) }
         val app = _state.value.app ?: return

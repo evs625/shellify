@@ -9,6 +9,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.shellify.app.core.engine.GeckoEngineManager
 import io.shellify.app.core.engine.GeckoInstallState
+import io.shellify.app.domain.model.Category
 import io.shellify.app.domain.model.EngineType
 import io.shellify.app.domain.model.NotificationPermission
 import io.shellify.app.domain.model.WebApp
@@ -42,6 +43,7 @@ class AppSettingsNotificationsSectionScreenshotTest {
         }
         return mockk<AppSettingsViewModel>(relaxed = true).also {
             every { it.uiState } returns MutableStateFlow(state)
+            every { it.categories } returns MutableStateFlow(emptyList<Category>())
             every { it.geckoEngineManager } returns gecko
             every { it.commands } returns MutableSharedFlow()
         }

@@ -17,6 +17,7 @@ import io.shellify.app.core.pwa.PwaAnalyzer
 import io.shellify.app.core.security.PasswordManager
 import io.shellify.app.domain.model.WebApp
 import io.shellify.app.domain.usecase.ExportNetworkLogsUseCase
+import io.shellify.app.domain.usecase.GetCategoriesUseCase
 import io.shellify.app.domain.usecase.GetNetworkLogUseCase
 import io.shellify.app.domain.usecase.GetWebAppByIdUseCase
 import io.shellify.app.domain.usecase.SaveWebAppUseCase
@@ -24,6 +25,7 @@ import io.shellify.app.presentation.settings.AppSettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -117,6 +119,7 @@ class ControlCenterToggleTest {
             },
             exportNetworkLog = mockk<ExportNetworkLogsUseCase>(relaxed = true),
             getNetworkLog = mockk<GetNetworkLogUseCase>(relaxed = true),
+            getCategories = mockk<GetCategoriesUseCase>().also { every { it() } returns flowOf(emptyList()) },
         )
     }
 }

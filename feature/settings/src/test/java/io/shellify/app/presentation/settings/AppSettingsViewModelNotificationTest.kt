@@ -18,6 +18,7 @@ import io.shellify.app.domain.model.NotificationPermission
 import io.shellify.app.domain.model.WebApp
 import io.shellify.app.domain.usecase.DeleteWebAppUseCase
 import io.shellify.app.domain.usecase.ExportNetworkLogsUseCase
+import io.shellify.app.domain.usecase.GetCategoriesUseCase
 import io.shellify.app.domain.usecase.GetNetworkLogUseCase
 import io.shellify.app.domain.usecase.GetWebAppByIdUseCase
 import io.shellify.app.domain.usecase.SaveWebAppUseCase
@@ -55,6 +56,7 @@ class AppSettingsViewModelNotificationTest {
     private val geckoEngineManager = mockk<GeckoEngineManager>(relaxed = true)
     private val exportNetworkLog = mockk<ExportNetworkLogsUseCase>(relaxed = true)
     private val getNetworkLog = mockk<GetNetworkLogUseCase>(relaxed = true)
+    private val getCategories = mockk<GetCategoriesUseCase>().also { every { it() } returns MutableStateFlow(emptyList()) }
 
     private val testApp = WebApp(
         id = 42L,
@@ -94,6 +96,7 @@ class AppSettingsViewModelNotificationTest {
             geckoEngineManager = geckoEngineManager,
             exportNetworkLog = exportNetworkLog,
             getNetworkLog = getNetworkLog,
+            getCategories = getCategories,
         )
     }
 
@@ -133,6 +136,7 @@ class AppSettingsViewModelNotificationTest {
             geckoEngineManager = geckoEngineManager,
             exportNetworkLog = exportNetworkLog,
             getNetworkLog = getNetworkLog,
+            getCategories = getCategories,
         )
         advanceUntilIdle()
 
@@ -162,6 +166,7 @@ class AppSettingsViewModelNotificationTest {
             geckoEngineManager = geckoEngineManager,
             exportNetworkLog = exportNetworkLog,
             getNetworkLog = getNetworkLog,
+            getCategories = getCategories,
         )
         advanceUntilIdle()
 
@@ -226,6 +231,7 @@ class AppSettingsViewModelNotificationTest {
             geckoEngineManager = geckoEngineManager,
             exportNetworkLog = exportNetworkLog,
             getNetworkLog = getNetworkLog,
+            getCategories = getCategories,
         )
         advanceUntilIdle()
         val commands = mutableListOf<AppSettingsCommand>()
@@ -272,6 +278,7 @@ class AppSettingsViewModelNotificationTest {
             geckoEngineManager = geckoEngineManager,
             exportNetworkLog = exportNetworkLog,
             getNetworkLog = getNetworkLog,
+            getCategories = getCategories,
         )
         advanceUntilIdle()
         assertEquals(22, viewModel.uiState.value.app?.dndStartHour)

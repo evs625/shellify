@@ -165,6 +165,7 @@ class AppLockPasswordGuardTest {
             },
             exportNetworkLog = mockk<ExportNetworkLogsUseCase>(relaxed = true),
             getNetworkLog = mockk<GetNetworkLogUseCase>(relaxed = true),
+            getCategories = mockk<GetCategoriesUseCase>().also { every { it() } returns flowOf(emptyList()) },
         )
     }
 

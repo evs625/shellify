@@ -22,6 +22,7 @@ import io.shellify.app.domain.model.EngineType
 import io.shellify.app.core.pwa.FaviconFetcher
 import io.shellify.app.core.pwa.PwaAnalyzer
 import io.shellify.app.core.theme.ThemeManager
+import io.shellify.app.domain.model.Category
 import io.shellify.app.domain.model.PwaManifest
 import io.shellify.app.domain.model.TranslateLanguage
 import io.shellify.app.domain.model.IconSource
@@ -35,9 +36,11 @@ import io.shellify.app.domain.usecase.GetWebAppByNameUseCase
 import io.shellify.app.domain.usecase.SaveWebAppUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -124,6 +127,9 @@ class AddViewModel(
     )
     val uiState: StateFlow<AddUiState> = _state
 
+    val categories: StateFlow<List<Category>> = getCategories()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private var originalApp: WebApp? = null
 
     init {
@@ -194,6 +200,7 @@ class AddViewModel(
         _state.update { it.copy(name = v, nameError = null, duplicateError = null) }
 
     fun setUrl(v: String) = _state.update { it.copy(url = v, urlError = null) }
+    fun setCategoryId(id: Long?) = _state.update { it.copy(categoryId = id) }
     fun setThemeColor(v: String?) {
         _state.update { it.copy(themeColor = v) }
         val src = _state.value.iconSource

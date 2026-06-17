@@ -40,6 +40,7 @@ import androidx.compose.material.icons.automirrored.filled.Shortcut
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Fullscreen
@@ -71,7 +72,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -115,6 +119,7 @@ import coil.request.ImageRequest
 import io.shellify.core.ui.R
 import io.shellify.app.core.engine.GeckoInstallState
 import io.shellify.app.core.shortcut.PwaShortcutManager
+import io.shellify.app.domain.model.Category
 import io.shellify.app.domain.model.EngineType
 import io.shellify.app.domain.model.NotificationPermission
 import io.shellify.app.presentation.theme.GeckoWarning
@@ -142,6 +147,7 @@ fun AppSettingsScreen(
     onNewTorIdentity: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
+    val categories by viewModel.categories.collectAsState()
     val geckoInstallState by viewModel.geckoEngineManager.installState.collectAsState()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -281,6 +287,12 @@ fun AppSettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(Dimens.cornerLg),
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                    )
+
+                    CategoryDropdown(
+                        categories = categories,
+                        selectedId = app.categoryId,
+                        onSelect = viewModel::setCategoryId,
                     )
 
                     // Icon row: preview + fetch + gallery + icon pack + theme color
@@ -1022,6 +1034,42 @@ private fun AppEngineCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoryDropdown(
+    categories: List<Category>,
+    selectedId: Long?,
+    onSelect: (Long?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val noneLabel = stringResource(R.string.add_category_none)
+    val selectedName = categories.firstOrNull { it.id == selectedId }?.name ?: noneLabel
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = selectedName, onValueChange = {}, readOnly = true,
+            label = { Text(stringResource(R.string.add_category_label)) },
+            leadingIcon = { Icon(Icons.Default.Folder, null, modifier = Modifier.size(Dimens.sizeMd)) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+            shape = RoundedCornerShape(Dimens.cornerLg),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(noneLabel) },
+                onClick = { onSelect(null); expanded = false },
+            )
+            categories.forEach { category ->
+                DropdownMenuItem(
+                    text = { Text(category.name) },
+                    onClick = { onSelect(category.id); expanded = false },
+                )
             }
         }
     }
