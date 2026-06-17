@@ -19,8 +19,14 @@ object WebViewProfileManager {
         runCatching {
             val store = ProfileStore.getInstance()
             val profileName = "pwa_$isolationId"
-            store.getOrCreateProfile(profileName)
+            val profile = store.getOrCreateProfile(profileName)
             WebViewCompat.setProfile(webView, profileName)
+            // Each profile owns a separate CookieManager. WebViewManager.configure() enabled
+            // third-party cookies on the DEFAULT profile's manager before this switch, so they
+            // must be re-enabled here on the profile actually backing the WebView. OAuth/SSO
+            // (e.g. "Sign in with Google") spans origins and silently fails without this.
+            profile.cookieManager.setAcceptCookie(true)
+            profile.cookieManager.setAcceptThirdPartyCookies(webView, true)
         }
         // If ProfileStore is unavailable on this build (shouldn't happen on API 33+),
         // we silently fall back — CookieJarManager handles the API < 33 path.
