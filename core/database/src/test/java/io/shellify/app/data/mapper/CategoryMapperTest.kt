@@ -16,7 +16,8 @@ class CategoryMapperTest {
             name = "Work",
             sortIndex = 2,
             icon = "briefcase",
-            color = "#1e40af"
+            color = "#1e40af",
+            sharedSpace = true,
         )
         val domain = entity.toDomain()
         assertEquals(5L, domain.id)
@@ -24,6 +25,7 @@ class CategoryMapperTest {
         assertEquals(2, domain.sortIndex)
         assertEquals("briefcase", domain.icon)
         assertEquals("#1e40af", domain.color)
+        assertEquals(true, domain.sharedSpace)
     }
 
     @Test
@@ -34,6 +36,7 @@ class CategoryMapperTest {
         assertEquals(0, domain.sortIndex)
         assertEquals("folder", domain.icon)
         assertEquals("#6D28D9", domain.color)
+        assertEquals(false, domain.sharedSpace)
     }
 
     // ── toEntity ──────────────────────────────────────────────────────────────
@@ -41,13 +44,14 @@ class CategoryMapperTest {
     @Test
     fun `toEntity maps all fields from domain to entity`() {
         val domain =
-            Category(id = 3, name = "Personal", sortIndex = 1, icon = "star", color = "#dc2626")
+            Category(id = 3, name = "Personal", sortIndex = 1, icon = "star", color = "#dc2626", sharedSpace = true)
         val entity = domain.toEntity()
         assertEquals(3L, entity.id)
         assertEquals("Personal", entity.name)
         assertEquals(1, entity.sortIndex)
         assertEquals("star", entity.icon)
         assertEquals("#dc2626", entity.color)
+        assertEquals(true, entity.sharedSpace)
     }
 
     // ── round-trip ────────────────────────────────────────────────────────────

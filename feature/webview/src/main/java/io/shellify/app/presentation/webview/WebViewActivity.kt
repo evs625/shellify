@@ -231,7 +231,11 @@ class WebViewActivity : FragmentActivity() {
             lifecycleScope.launch {
                 val webApp = withContext(Dispatchers.IO) { app.getWebAppById(appId) }
                     ?: run { finish(); return@launch }
-                initWithApp(app, webApp, appId, previewUrl)
+                // Shared space: apps in a category with the flag on resolve to one shared isolation
+                // partition. alwaysIncognito still overrides this inside initWithApp (ephemeral wins).
+                val category = webApp.categoryId?.let { withContext(Dispatchers.IO) { app.getCategoryById(it) } }
+                val resolvedIsolationId = app.resolveIsolationId(webApp, category)
+                initWithApp(app, webApp.copy(isolationId = resolvedIsolationId), appId, previewUrl)
             }
         } else {
             finish()

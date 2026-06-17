@@ -78,3 +78,10 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
         db.execSQL("ALTER TABLE web_apps ADD COLUMN preserve_tor_identity INTEGER NOT NULL DEFAULT 0")
     }
 }
+
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Shared space: apps in a category with this flag on share a single isolation partition.
+        db.execSQL("ALTER TABLE categories ADD COLUMN sharedSpace INTEGER NOT NULL DEFAULT 0")
+    }
+}

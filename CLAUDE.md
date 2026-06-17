@@ -240,7 +240,7 @@ Changelog is auto-generated from commits on `v*` tag push via git-cliff.
 
 ## Known Gotchas
 
-**Database schema tracking disabled** — `AppDatabase.kt` declares `version = 1` with `exportSchema = false`. No schema files are generated, so there is no migration history to diff against. Any schema bump requires explicit `Migration` objects for all version gaps. Do not change the schema until `exportSchema = true` is re-enabled and a clean baseline is committed. See `.planning/codebase/CONCERNS.md`.
+**Database schema migrations** — `AppDatabase.kt` declares `version = 7` with `exportSchema = true`. Schema JSON baselines live in `core/database/schemas/` (`1.json` … `7.json`) and `runMigrationsAndValidate` checks against them. Any schema bump requires: (1) a new `MIGRATION_<n>_<n+1>` object in `Migrations.kt`, (2) registration in `AppDatabase.buildDatabase` via `.addMigrations(...)`, (3) a build to generate the new `<n+1>.json` (commit it), and (4) a migration test — unit (`Migration<n>To<n+1>Test` in `src/test`, asserting SQL) plus instrumented (`src/androidTest`, end-to-end via `MigrationTestHelper`).
 
 **GeckoView Gradle dependency is arm64-only** — `libs.versions.toml` declares only `geckoview-arm64-v8a` for the compile-time API. At runtime, `GeckoEngineManager` detects `Build.SUPPORTED_ABIS` and downloads the correct ABI artifact (arm64-v8a, armeabi-v7a, x86_64, x86). Native `.so` files are excluded from the APK and downloaded on demand. Do not add a bundled non-arm64 geckoview dependency without updating the download and preload logic.
 

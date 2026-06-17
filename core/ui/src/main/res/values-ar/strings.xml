@@ -329,6 +329,8 @@
     <string name="categories_name_label">الاسم</string>
     <string name="categories_icon_label">الأيقونة</string>
     <string name="categories_color_label">اللون</string>
+    <string name="categories_shared_space_label">مساحة مشتركة</string>
+    <string name="categories_shared_space_desc">التطبيقات في هذه الفئة تتشارك مساحة واحدة — تُشارَك بينها عمليات تسجيل الدخول والبيانات.</string>
     <string name="categories_add_button">إضافة</string>
     <string name="categories_save_button">حفظ</string>
     <string name="categories_suggestion_media">وسائط</string>

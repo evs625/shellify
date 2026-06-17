@@ -17,6 +17,7 @@ import io.shellify.app.domain.usecase.GetNotificationsUseCase
 import io.shellify.app.domain.usecase.GetWebAppByIdUseCase
 import io.shellify.app.domain.usecase.GetWebAppsUseCase
 import io.shellify.app.domain.usecase.LogNetworkRequestUseCase
+import io.shellify.app.domain.usecase.ResolveIsolationIdUseCase
 import io.shellify.app.domain.usecase.SaveNotificationUseCase
 import io.shellify.app.domain.usecase.SaveWebAppUseCase
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +34,7 @@ interface WebViewServiceProvider {
     val getWebApps: GetWebAppsUseCase
     val notificationDispatcher: PwaNotificationDispatcher?
     val getCategoryById: GetCategoryByIdUseCase
+    val resolveIsolationId: ResolveIsolationIdUseCase
     val saveNotification: SaveNotificationUseCase
     val getNotifications: GetNotificationsUseCase
     val deleteOldNotifications: DeleteOldNotificationsUseCase

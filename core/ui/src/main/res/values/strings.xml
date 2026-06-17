@@ -390,6 +390,8 @@
     <string name="categories_name_label">Name</string>
     <string name="categories_icon_label">Icon</string>
     <string name="categories_color_label">Color</string>
+    <string name="categories_shared_space_label">Shared space</string>
+    <string name="categories_shared_space_desc">Apps in this category share one space — logins and data are shared between them.</string>
     <string name="categories_add_button">Add</string>
     <string name="categories_save_button">Save</string>
     <string name="categories_suggestion_media">Media</string>

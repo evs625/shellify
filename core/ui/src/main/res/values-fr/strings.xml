@@ -329,6 +329,8 @@
     <string name="categories_name_label">Nom</string>
     <string name="categories_icon_label">Icône</string>
     <string name="categories_color_label">Couleur</string>
+    <string name="categories_shared_space_label">Espace partagé</string>
+    <string name="categories_shared_space_desc">Les applis de cette catégorie partagent un même espace — connexions et données sont partagées entre elles.</string>
     <string name="categories_add_button">Ajouter</string>
     <string name="categories_save_button">Enregistrer</string>
     <string name="categories_suggestion_media">Médias</string>

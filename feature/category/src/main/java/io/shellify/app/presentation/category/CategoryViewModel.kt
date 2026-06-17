@@ -19,6 +19,7 @@ data class CategoryUiState(
     val showAddDialog: Boolean = false,
     val selectedIcon: String = "folder",
     val selectedColor: String = "#6D28D9",
+    val sharedSpace: Boolean = false,
 )
 
 class CategoryViewModel(
@@ -53,6 +54,7 @@ class CategoryViewModel(
             newName = category.name,
             selectedIcon = category.icon,
             selectedColor = category.color,
+            sharedSpace = category.sharedSpace,
         )
     }
 
@@ -62,21 +64,24 @@ class CategoryViewModel(
             editingId = null,
             newName = "",
             selectedIcon = "folder",
-            selectedColor = "#6D28D9"
+            selectedColor = "#6D28D9",
+            sharedSpace = false,
         )
     }
 
     fun setNewName(name: String) = _state.update { it.copy(newName = name) }
     fun setSelectedIcon(icon: String) = _state.update { it.copy(selectedIcon = icon) }
     fun setSelectedColor(color: String) = _state.update { it.copy(selectedColor = color) }
+    fun setSharedSpace(enabled: Boolean) = _state.update { it.copy(sharedSpace = enabled) }
 
     fun addCategory() {
         val name = _state.value.newName.trim().takeIf { it.isNotBlank() } ?: return
         val icon = _state.value.selectedIcon
         val color = _state.value.selectedColor
         val id = _state.value.editingId ?: 0L
+        val sharedSpace = _state.value.sharedSpace
         viewModelScope.launch {
-            saveCategory(Category(id = id, name = name, icon = icon, color = color))
+            saveCategory(Category(id = id, name = name, icon = icon, color = color, sharedSpace = sharedSpace))
             dismissDialog()
         }
     }

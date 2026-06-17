@@ -12,6 +12,7 @@
 - Allow inline name editing and per-category color selection.
 - Create new categories and delete empty or non-empty ones (with confirmation).
 - Assign or reassign apps to categories (via `UpdateWebAppCategory` use case).
+- Toggle **shared space** per category — when on, every app in the category shares one isolation partition (logins and storage are shared instead of isolated).
 
 ## Key Classes / Files
 
@@ -107,3 +108,4 @@ flowchart LR
 - **Category color palette**: the `ColorPickerDialog` in `core:ui` exposes a fixed palette of 16 Material-harmonized colors. No free-form hex input is provided by default — extend the palette in `core:ui` if needed.
 - **Deletion policy**: deleting a category does **not** delete the apps assigned to it. Apps are moved to the "Uncategorized" bucket (null `categoryId`) by `DeleteCategory`'s implementation in `core:database`.
 - **Ordering**: categories are displayed in insertion order. Drag-to-reorder is not currently implemented; add an `order` field to `Category` and a `ReorderCategories` use case if needed.
+- **Shared space**: the add/edit dialog exposes a `sharedSpace` toggle persisted on the `Category`. When enabled, apps in the category resolve to a single shared isolation partition (`cat_<id>`) at launch via `ResolveIsolationIdUseCase` (see `core:isolation`). Apps' own `isolationId` values are never mutated, so disabling the toggle or moving an app out of the category instantly restores its private session. `alwaysIncognito` always overrides shared space.

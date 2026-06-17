@@ -122,5 +122,6 @@ flowchart TD
 | Cookie encryption | Delegated to `core:crypto` (`CryptoManager`) — Android Keystore-backed |
 | SQLite table | One row per cookie per `isolationId` |
 | `isolationId` format | UUID assigned at PWA creation time; stored in `core:domain` `WebApp` entity |
+| Shared space (per category) | When a `Category` has `sharedSpace = true`, `ResolveIsolationIdUseCase` (in `core:domain`) returns the category's `cat_<id>` partition key instead of the app's own `isolationId`, so all apps in that category share cookies/storage. Resolution happens in `feature:webview` before the profile is attached; the manager itself is unchanged. `alwaysIncognito` overrides shared space (ephemeral wins). |
 
 **Consumers:** `feature:webview` (attaches profiles and restores sessions), `feature:settings` (clear data action), `core:backup` (exports/imports cookie jars and WebView profiles).

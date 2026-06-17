@@ -74,6 +74,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -464,6 +465,7 @@ fun CategoryScreen(
             onNameChange = viewModel::setNewName,
             onIconSelect = viewModel::setSelectedIcon,
             onColorSelect = viewModel::setSelectedColor,
+            onSharedSpaceChange = viewModel::setSharedSpace,
             onConfirm = viewModel::addCategory,
             onDismiss = viewModel::dismissDialog,
         )
@@ -477,6 +479,7 @@ private fun AddCategoryDialog(
     onNameChange: (String) -> Unit,
     onIconSelect: (String) -> Unit,
     onColorSelect: (String) -> Unit,
+    onSharedSpaceChange: (Boolean) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -574,6 +577,28 @@ private fun AddCategoryDialog(
                             }
                         }
                     }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.spaceMd),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.categories_shared_space_label),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Text(
+                            stringResource(R.string.categories_shared_space_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.sharedSpace,
+                        onCheckedChange = onSharedSpaceChange,
+                    )
                 }
             }
         },

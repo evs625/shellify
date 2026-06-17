@@ -41,6 +41,7 @@ import io.shellify.app.domain.usecase.GetWebAppByNameUseCase
 import io.shellify.app.domain.usecase.GetWebAppsUseCase
 import io.shellify.app.domain.usecase.IsDndActiveUseCase
 import io.shellify.app.domain.usecase.LogNetworkRequestUseCase
+import io.shellify.app.domain.usecase.ResolveIsolationIdUseCase
 import io.shellify.app.domain.usecase.SaveCategoryUseCase
 import io.shellify.app.domain.usecase.SaveNotificationUseCase
 import io.shellify.app.domain.usecase.SaveWebAppUseCase
@@ -83,6 +84,7 @@ class ShellifyApplication : Application(), WebViewServiceProvider, LinkDispatche
     override val webViewIntentFactory: WebViewIntentFactory by lazy { WebViewIntentFactoryImpl() }
     val getCategories by lazy { GetCategoriesUseCase(categoryRepository) }
     override val getCategoryById by lazy { GetCategoryByIdUseCase(categoryRepository) }
+    override val resolveIsolationId by lazy { ResolveIsolationIdUseCase() }
     val saveCategory by lazy { SaveCategoryUseCase(categoryRepository) }
     val deleteCategory by lazy { DeleteCategoryUseCase(categoryRepository) }
     val deleteAllCategories by lazy { DeleteAllCategoriesUseCase(categoryRepository) }
