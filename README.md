@@ -312,8 +312,9 @@ Then open `http://localhost:8080/tools.html` as a Shellify web app. Available ta
 
 | Tab | What it tests |
 |---|---|
-| **Chrome Tools** | `ShellifyBridge` Java interface — direct notification dispatch, rate limit, and truncation via the Chromium WebView |
-| **GeckoView Tools** | Web `Notification` API via Gecko — permission flow, foreground fire, and 10-second background timer |
+| **Notifications** | `ShellifyBridge` Java interface and the Web `Notification` API — direct dispatch, rate limit, truncation, permission flow, foreground fire, and a 10-second background timer |
+| **Popups** | `window.open()` / `target="_blank"` and a full offline "Sign in with Google" OAuth round-trip (opener `postMessage` + auto-close) |
+| **Cookie Sharing** | Per-category shared-space storage — writes a tagged cookie + localStorage + IndexedDB marker in one app, then verifies another app in the same shared category sees it (renders a **SHARED ✓ / NOT SHARED ✗** verdict) |
 
 ---
 

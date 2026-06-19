@@ -305,6 +305,12 @@
       </span>
       Popups
     </button>
+    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-cookies" data-tab="cookies" onclick="switchTab('cookies')">
+      <span class="tab-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      </span>
+      Cookie Sharing
+    </button>
   </div>
 
   <!-- ── Notifications panel ──────────────────────────── -->
@@ -419,6 +425,64 @@
     </div>
 
   </div><!-- /#panel-popups -->
+
+  <!-- ── Cookie Sharing panel ─────────────────────────── -->
+  <div class="tab-panel" id="panel-cookies" role="tabpanel">
+
+    <!-- Verdict pill -->
+    <div class="status-pill" id="share-verdict">
+      <span class="status-dot"></span>
+      <span id="share-verdict-text">Name this app, write a marker, then Check it from another app in the same category.</span>
+    </div>
+
+    <div class="tool-grid">
+
+      <!-- Storage probe -->
+      <div class="tool-card">
+        <div class="tool-card-header">
+          <span class="tool-card-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </span>
+          <h3>Shared storage probe</h3>
+        </div>
+        <p>Writes a tagged marker to <strong>cookies</strong>, <strong>localStorage</strong> and <strong>IndexedDB</strong> — the stores a shared-space category puts in one partition. Give this app a unique name so a read in another app can tell who wrote it.</p>
+        <input id="share-app-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+          placeholder="This app's name (e.g. Gmail)"
+          style="width:100%;box-sizing:border-box;padding:11px 14px;margin-bottom:10px;font-size:0.8125rem;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-mono);" />
+        <button class="btn-tool primary"   onclick="writeShareMarkers()">Write marker (run in app A)</button>
+        <button class="btn-tool secondary" onclick="checkShareMarkers()">Check marker (run in app B)</button>
+        <button class="btn-tool danger"    onclick="clearShareMarkers()">Clear markers in this app</button>
+      </div>
+
+      <!-- How to test -->
+      <div class="tool-card">
+        <div class="tool-card-header">
+          <span class="tool-card-icon teal">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          </span>
+          <h3>How to test</h3>
+        </div>
+        <p><strong>Shared (positive):</strong></p>
+        <p>1. Add two apps pointing at this page; put both in one category and turn on <em>Shared space</em>.<br>
+           2. In <strong>App A</strong>: set its name, tap <em>Write marker</em>.<br>
+           3. In <strong>App B</strong>: set a different name, tap <em>Check marker</em> → expect <span style="color:var(--secondary)">SHARED ✓</span> (written by "App A").</p>
+        <p style="margin-top:12px"><strong>Isolated (control):</strong></p>
+        <p>4. Open an app <em>not</em> in that category (or a category with Shared space off) and tap <em>Check marker</em> → expect <span style="color:#FF6B6B">NOT SHARED ✗</span> (no marker).</p>
+        <p style="margin-top:12px;color:var(--text-subtle)">Note: this probes first-party storage sharing. OAuth/SSO also needs third-party cookies — see the Popups tab.</p>
+      </div>
+
+    </div><!-- /.tool-grid -->
+
+    <!-- Log console -->
+    <div class="log-section">
+      <div class="log-header">
+        <span class="log-label">Console</span>
+        <button class="log-clear" onclick="clearShareLog()">Clear</button>
+      </div>
+      <div id="share-log">Ready. Set this app's name, then Write or Check a marker.</div>
+    </div>
+
+  </div><!-- /#panel-cookies -->
 
 </div><!-- /.wrap -->
 </main>
@@ -740,6 +804,131 @@ function oauthRoundTrip() {
   setTimeout(function() {
     if (!received) plog('⚠ No message after 5s — opener channel may be broken or popup still open', 'err');
   }, 5000);
+}
+
+// ── Cookie / storage sharing ───────────────────────────
+// Verifies the shared-space feature: apps in a category with "Shared space" on use one storage
+// partition, so a marker written in app A is visible in app B. A marker carries the writer app's
+// name, so a read can tell "another app wrote this" (SHARED) from "only my own write".
+const SHARE_KEY = 'shellify_share';
+
+function slog(msg, type) {
+  const el = document.getElementById('share-log');
+  const ts = new Date().toLocaleTimeString();
+  const cls = type === 'ok' ? 'log-ok' : type === 'err' ? 'log-err' : '';
+  const line = document.createElement('div');
+  line.innerHTML = `<span class="log-ts">[${ts}]</span> <span class="${cls}">${msg}</span>`;
+  el.insertBefore(line, el.firstChild);
+}
+function clearShareLog() { document.getElementById('share-log').innerHTML = ''; }
+
+function setShareVerdict(state, msg) {
+  const pill = document.getElementById('share-verdict');
+  pill.classList.remove('ok', 'err');
+  if (state) pill.classList.add(state);
+  document.getElementById('share-verdict-text').textContent = msg;
+}
+
+function shareAppName() { return (document.getElementById('share-app-name').value || '').trim(); }
+
+// Remember this app's name for the browsing session (sessionStorage is per-WebView, so it is NOT
+// shared across apps — the name stays local even when cookies/localStorage are shared).
+(function initShareName() {
+  const el = document.getElementById('share-app-name');
+  if (!el) return;
+  try { const v = sessionStorage.getItem('shellify-share-appname'); if (v) el.value = v; } catch (e) {}
+  el.addEventListener('input', () => { try { sessionStorage.setItem('shellify-share-appname', el.value); } catch (e) {} });
+})();
+
+function getCookie(name) {
+  const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+  return m ? m.pop() : null;
+}
+
+// IndexedDB key/value helpers (async).
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('shellify_share_test', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+function idbRun(mode, fn) {
+  return idbOpen().then(db => new Promise((res, rej) => {
+    const tx = db.transaction('kv', mode);
+    const out = fn(tx.objectStore('kv'));
+    tx.oncomplete = () => { db.close(); res(out && out.result !== undefined ? out.result : null); };
+    tx.onerror = () => { db.close(); rej(tx.error); };
+  }));
+}
+function idbSet(k, v) { return idbRun('readwrite', s => s.put(v, k)); }
+function idbGet(k)    { return idbRun('readonly',  s => s.get(k)); }
+function idbDel(k)    { return idbRun('readwrite', s => s.delete(k)); }
+
+async function writeShareMarkers() {
+  const me = shareAppName();
+  if (!me) { slog('⚠ Set "This app\'s name" first so a read can tell apps apart.', 'err'); return; }
+  const payload = JSON.stringify({ app: me, ts: Date.now(), nonce: Math.random().toString(36).slice(2, 8) });
+
+  document.cookie = SHARE_KEY + '=' + encodeURIComponent(payload) + ';path=/;max-age=31536000;samesite=lax';
+  const cookieOk = getCookie(SHARE_KEY) !== null;
+  slog(cookieOk ? '✓ cookie written' : '✗ cookie write failed (cookies disabled?)', cookieOk ? 'ok' : 'err');
+
+  try { localStorage.setItem(SHARE_KEY, payload); slog('✓ localStorage written', 'ok'); }
+  catch (e) { slog('✗ localStorage failed: ' + e.message, 'err'); }
+
+  try { await idbSet('marker', payload); slog('✓ IndexedDB written', 'ok'); }
+  catch (e) { slog('✗ IndexedDB failed: ' + e.message, 'err'); }
+
+  setShareVerdict('', 'Marker written as "' + me + '". Now open another app in the same category and tap Check.');
+  slog('Marker tagged "' + me + '" at ' + new Date().toLocaleTimeString() + '. Check it from app B.', 'ok');
+}
+
+async function checkShareMarkers() {
+  const me = shareAppName();
+  const cookieRaw = getCookie(SHARE_KEY);
+  let lsRaw = null;  try { lsRaw = localStorage.getItem(SHARE_KEY); } catch (e) {}
+  let idbRaw = null; try { idbRaw = await idbGet('marker'); } catch (e) {}
+
+  const stores = [
+    { name: 'cookie',       raw: cookieRaw ? decodeURIComponent(cookieRaw) : null },
+    { name: 'localStorage', raw: lsRaw },
+    { name: 'IndexedDB',    raw: idbRaw || null },
+  ];
+
+  let foreign = 0, own = 0, unknown = 0;
+  stores.forEach(s => {
+    if (!s.raw) { slog('• ' + s.name + ': (empty)'); return; }
+    let p = null; try { p = JSON.parse(s.raw); } catch (e) {}
+    const who = p && p.app ? p.app : '?';
+    const when = p && p.ts ? new Date(p.ts).toLocaleTimeString() : '?';
+    if (p && p.app && me && p.app === me)      { own++;     slog('• ' + s.name + ': your own marker ("' + who + '", ' + when + ')'); }
+    else if (p && p.app && me && p.app !== me) { foreign++; slog('• ' + s.name + ': written by "' + who + '" at ' + when + ' ✓', 'ok'); }
+    else                                       { unknown++; slog('• ' + s.name + ': marker present ("' + who + '") — set this app\'s name to compare'); }
+  });
+
+  if (foreign > 0) {
+    setShareVerdict('ok', '✓ SHARED — this app sees a marker written by another app. Shared cookies are working.');
+    slog('VERDICT: SHARED ✓ — ' + foreign + '/3 stores carry another app\'s marker.', 'ok');
+  } else if (unknown > 0) {
+    setShareVerdict('', '○ Markers present but this app has no name set — type a name and Check again to compare.');
+    slog('VERDICT: inconclusive — set this app\'s name to tell writers apart.', null);
+  } else if (own > 0) {
+    setShareVerdict('', '○ Only this app\'s own markers are visible. Write in app A, then Check here in app B.');
+    slog('VERDICT: inconclusive — only your own markers found.', null);
+  } else {
+    setShareVerdict('err', '✗ NOT SHARED — no marker from another app. This partition looks isolated (or nothing was written yet).');
+    slog('VERDICT: NOT SHARED ✗ — no markers found in this partition.', 'err');
+  }
+}
+
+async function clearShareMarkers() {
+  document.cookie = SHARE_KEY + '=;path=/;max-age=0;samesite=lax';
+  try { localStorage.removeItem(SHARE_KEY); } catch (e) {}
+  try { await idbDel('marker'); } catch (e) {}
+  setShareVerdict('', 'Markers cleared in this app\'s partition.');
+  slog('Cleared cookie + localStorage + IndexedDB markers in this partition.', 'ok');
 }
 </script>
 </body>
