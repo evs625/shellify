@@ -1,6 +1,7 @@
 package io.shellify.app.presentation.add
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import androidx.lifecycle.ViewModel
@@ -131,6 +132,11 @@ class AddViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var originalApp: WebApp? = null
+
+    // Debug builds may load plain-HTTP origins (e.g. http://localhost:8080 for the docs/tools page)
+    // for local development and testing. Release builds keep enforcing HTTPS.
+    private val isDebuggable: Boolean =
+        (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     init {
         if (appId != 0L) {
@@ -344,6 +350,14 @@ class AddViewModel(
                 return null
             }
             return normalized
+        }
+        // Debug builds keep an explicit http:// origin as-is (local dev servers, e.g. localhost).
+        if (isDebuggable && trimmed.startsWith("http://")) {
+            if (!isValidUrl(trimmed)) {
+                _state.update { it.copy(urlError = context.getString(R.string.error_invalid_url)) }
+                return null
+            }
+            return trimmed
         }
         // Explicitly typed http:// must be upgraded to https before saving.
         if (trimmed.startsWith("http://")) {
