@@ -236,7 +236,7 @@
   transition: color 0.15s;
 }
 .log-clear:hover { color: var(--text); }
-#log, #popup-log {
+#log, #popup-log, #share-log {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -252,9 +252,9 @@
   scrollbar-width: thin;
   scrollbar-color: var(--surface-3) transparent;
 }
-#log .log-ts, #popup-log .log-ts { color: var(--text-subtle); }
-#log .log-ok,  #popup-log .log-ok  { color: var(--secondary); }
-#log .log-err, #popup-log .log-err { color: #FF6B6B; }
+#log .log-ts, #popup-log .log-ts, #share-log .log-ts { color: var(--text-subtle); }
+#log .log-ok,  #popup-log .log-ok,  #share-log .log-ok  { color: var(--secondary); }
+#log .log-err, #popup-log .log-err, #share-log .log-err { color: #FF6B6B; }
 </style>
 </head>
 <body>
