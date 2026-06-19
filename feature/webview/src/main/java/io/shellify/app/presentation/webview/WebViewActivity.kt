@@ -982,6 +982,9 @@ class WebViewActivity : FragmentActivity() {
             override fun onClosePopup(view: View) {
                 popupOverlays.remove(view)
                 (view.parent as? ViewGroup)?.removeView(view)
+                // An OAuth/login popup just closed — commit the cookies it set so the main view (and
+                // other apps sharing this profile) see the session immediately, not after a lazy flush.
+                viewModel.uiState.value.app?.isolationId?.let { isolationManager.flush(it) }
             }
 
             override fun onDownloadStart(
@@ -1177,6 +1180,11 @@ class WebViewActivity : FragmentActivity() {
         val appId = intent.getLongExtra(EXTRA_APP_ID, -1L)
         if (appId == -1L) return
         (application as? WebViewServiceProvider)?.unregisterActiveApp(appId)
+        // Commit cookies before backgrounding so the next app opened in the same shared profile
+        // reads a fully up-to-date jar (otherwise a freshly-set login may not be visible yet).
+        if (::viewModel.isInitialized) {
+            viewModel.uiState.value.app?.isolationId?.let { isolationManager.flush(it) }
+        }
         // For GeckoView apps with notification permission, start a foreground service so the
         // background GeckoSession runs without Android's JS throttling. The service's initSession()
         // dedup guard prevents creating multiple sessions if onStartCommand fires repeatedly.

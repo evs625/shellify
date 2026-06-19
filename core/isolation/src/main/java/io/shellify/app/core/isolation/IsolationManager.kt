@@ -9,6 +9,7 @@ import io.shellify.app.core.engine.GeckoEngineManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Single entry-point for all PWA isolation logic.
@@ -47,6 +48,22 @@ class IsolationManager(
     suspend fun restoreSession(isolationId: String) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             cookieJarManager.restoreFor(isolationId)
+        }
+    }
+
+    /**
+     * Commits the session's cookies to the shared store immediately. WebView writes cookies lazily
+     * with no guaranteed cross-context visibility, so call this when cookies have just changed (e.g.
+     * a login popup closing) or when leaving the app — otherwise the main view, or another app in the
+     * same shared profile, may read a stale jar and appear logged out.
+     */
+    fun flush(isolationId: String) {
+        scope.launch {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                WebViewProfileManager.flush(isolationId)
+            } else {
+                withContext(Dispatchers.IO) { CookieManager.getInstance().flush() }
+            }
         }
     }
 
