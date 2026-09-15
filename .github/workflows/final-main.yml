@@ -1,0 +1,27 @@
+name: Final main validation
+
+on:
+  push:
+    branches:
+      - 'work-item/**'
+      - 'integration/**'
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: final-main-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  final-main:
+    name: final-main
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-android
+      - name: Validate governed candidate
+        run: ./gradlew detekt lintDebug testDebugUnitTest assembleDebug

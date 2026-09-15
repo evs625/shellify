@@ -5,6 +5,7 @@ CI/CD workflow definitions.
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `pull_request.yml` | Pull request open / synchronize | Runs detekt, lint, unit tests, screenshot verification, and architecture checks on every PR |
+| `final-main.yml` | Governed candidate push / PR | Required pre-merge gate: detekt, lint, unit tests, and debug build |
 | `main.yml` | Push to `main` | Full check suite + debug APK build + instrumentation tests on an emulator |
 | `release.yml` | Push of a `v*` tag | Signed release APK build, changelog generation via git-cliff, GitHub Release creation |
 
