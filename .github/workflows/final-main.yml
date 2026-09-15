@@ -5,8 +5,6 @@ on:
     branches:
       - 'work-item/**'
       - 'integration/**'
-  pull_request:
-    branches: [ main ]
 
 concurrency:
   group: final-main-${{ github.ref }}
