@@ -25,7 +25,8 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
                 showSkippedStandardStreams = false
             }
             extensions.configure<ApplicationExtension> {
-                compileSdk = 36
+                compileSdk = 37
+                compileSdkMinor = 1
                 defaultConfig {
                     minSdk = 26
                     targetSdk = 36

@@ -20,7 +20,7 @@ class BackgroundNotificationServiceTest {
         val service = controller.get()
 
         val intent = Intent(service, BackgroundNotificationService::class.java).apply {
-            putExtra(BackgroundNotificationService.EXTRA_APP_ID, 42L)
+            action = BackgroundNotificationService.ACTION_STOP
         }
         service.onStartCommand(intent, 0, 1)
 

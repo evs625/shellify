@@ -12,7 +12,7 @@ object GeckoNativeLoader {
     private val PRELOAD_ORDER = listOf("libmozglue.so", "liblgpllibs.so", "libxul.so")
 
     fun injectAndLoad(context: Context) {
-        val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+        val abi = GeckoEngineManager.selectSupportedAbi(Build.SUPPORTED_ABIS) ?: return
         val libDir = File(context.filesDir, "gecko_engine/lib/$abi")
         if (!libDir.exists()) return
         injectDirIntoClassLoader(context, libDir)

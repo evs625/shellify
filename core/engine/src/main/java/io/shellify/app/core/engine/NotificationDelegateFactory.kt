@@ -1,7 +1,10 @@
 package io.shellify.app.core.engine
 
+import android.os.Handler
+import android.os.Looper
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.WebNotification
 
 /**
  * Consolidates notification and permission delegate wiring so both [GeckoViewEngine.buildSession]
@@ -23,6 +26,19 @@ object NotificationDelegateFactory {
         onPermissionGranted: ((GeckoSession.PermissionDelegate.ContentPermission) -> Unit)? = null,
     ) {
         session.permissionDelegate = buildPermissionDelegate(cb, onPermissionGranted)
+    }
+
+
+    /** Completes GeckoView's notification-display handshake on the Android UI thread. */
+    fun completeNotificationLifecycle(notification: WebNotification, isShown: Boolean) {
+        val complete = Runnable {
+            if (isShown) notification.show() else notification.dismiss()
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            complete.run()
+        } else {
+            Handler(Looper.getMainLooper()).post(complete)
+        }
     }
 
     private fun buildPermissionDelegate(

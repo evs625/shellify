@@ -84,7 +84,7 @@ SHA-1: 75:F2:73:AF:01:93:EF:08:F3:F2:2F:8C:B2:EA:FE:8B:BC:A0:27:73
 | Android Studio | Ladybug or newer |
 | JDK | 21 |
 | Gradle | wrapper included |
-| Android SDK | Compile SDK 36, Min SDK 26 |
+| Android SDK | Compile SDK 37.1, Min SDK 26 |
 
 Minimum device: **Android 8.0 (API 26)**
 Target: **Android 15 (API 36)**

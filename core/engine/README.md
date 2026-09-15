@@ -24,7 +24,7 @@
 | `BrowserEngineCallback` | Callback interface for page load progress, network errors, DOM change events, and network request interception (`onRequestIntercepted(url, blocked)`). |
 | `GeckoViewEngine` | `BrowserEngine` implementation backed by Mozilla GeckoView. |
 | `SystemWebViewEngine` | `BrowserEngine` implementation backed by `android.webkit.WebView`. |
-| `GeckoEngineManager` | Downloads GeckoView 128.0.20240704121409 from `maven.mozilla.org`; detects device ABI (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`); SHA-256 verifies the downloaded AAR; extracts native `.so` libraries to `filesDir/gecko_engine/lib/$abi/`; exposes a `StateFlow<GeckoInstallState>` for UI observation. |
+| `GeckoEngineManager` | Downloads GeckoView 156.0.20260909172920 from `maven.mozilla.org`; detects device ABI (`arm64-v8a`, `armeabi-v7a`, `x86_64`); SHA-256 verifies the downloaded AAR; extracts native `.so` libraries to `filesDir/gecko_engine/lib/$abi/`; exposes a `StateFlow<GeckoInstallState>` for UI observation. |
 | `WebViewManager` | Factory that creates and configures `WebView` instances: applies ad-block injection, sets the custom user-agent, and wires the `BrowserEngineCallback`. |
 | `AdBlocker` | EasyList-based blocker. Core API: `block(url: String, contentType: String): Boolean`. Supports per-app custom rules. |
 | `AdBlockFilterCache` | Two-tier cache: in-memory LRU + disk persistence. Reduces filter list parse overhead on cold start. |
@@ -44,7 +44,7 @@ Native libraries (`libxul.so`, etc.) are intentionally excluded from the main AP
 // core/engine/build.gradle.kts
 dependencies {
     api(project(":core:domain"))
-    implementation("org.mozilla.geckoview:geckoview:128.0.20240704121409")
+    implementation("org.mozilla.geckoview:geckoview:156.0.20260909172920")
     implementation("com.squareup.okhttp3:okhttp:<version>")
     implementation("androidx.webkit:webkit:<version>")
 }
@@ -107,10 +107,10 @@ stateDiagram-v2
 
 | Item | Value / Location |
 |---|---|
-| GeckoView version | `128.0.20240704121409` |
+| GeckoView version | `156.0.20260909172920` |
 | Maven repository | `https://maven.mozilla.org/maven2` |
 | Native lib output path | `filesDir/gecko_engine/lib/$abi/` |
-| ABI list | `arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86` |
+| ABI list | `arm64-v8a`, `armeabi-v7a`, `x86_64` |
 | EasyList source | Bundled in `assets/easylist.txt`; updated via `AdBlockFilterCache` |
 | Native libs in APK | Excluded via `packagingOptions { exclude "**/*.so" }` |
 
@@ -211,7 +211,7 @@ Data-class equality is used as the cache key: identical `ProxyConfig` values alw
 
 **After:** `getRuntime(proxyConfig: ProxyConfig = ProxyConfig.None): GeckoRuntime` returns a cached runtime keyed by `ProxyConfig`. Identical configs return the same instance; different configs produce independent runtimes (Tor traffic never shares a runtime with non-Tor traffic — T-02-20).
 
-**SOCKS5 proxy strategy:** Per Plan 04 Task 0 (blocking-human checkpoint — GeckoView 140 Javadoc verified), `GeckoRuntimeSettings.Builder` in GeckoView 140 has no `.proxyHost()`/`.proxyPort()` methods. The verified approach sets JVM system properties **before** `GeckoRuntime.create()`:
+**SOCKS5 proxy strategy:** Per Plan 04 Task 0 (blocking-human checkpoint — GeckoView 156 Javadoc verified), `GeckoRuntimeSettings.Builder` has no `.proxyHost()`/`.proxyPort()` methods. The verified approach sets JVM system properties **before** `GeckoRuntime.create()`:
 
 ```kotlin
 System.setProperty("socksProxyHost", "127.0.0.1")

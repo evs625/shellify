@@ -145,6 +145,7 @@ sequenceDiagram
 - **GeckoView runtime**: initialized lazily by `GeckoEngineManager` in `ShellifyApplication.onCreate()`. If GeckoView is not bundled, `geckoEngineManager.isAvailable()` returns `false` and the activity falls back to system WebView automatically.
 - **Fullscreen handling**: uses `WindowInsetsControllerCompat` (Jetpack) for API-agnostic status/nav bar hiding. The window flag `FLAG_KEEP_SCREEN_ON` is set when fullscreen is active.
 - **Ad-block lists**: filter lists are loaded from `core:engine`'s bundled assets on first engine start. No network fetch at browse time.
+- **Robolectric tests**: Android-dependent JVM tests pin a supported SDK with `@Config` so they remain runnable when the project compile SDK is newer than Robolectric's packaged Android SDK support.
 
 ## Phase 2 Privacy Additions
 

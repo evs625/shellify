@@ -29,13 +29,14 @@ internal data class NotificationPayload(
 )
 
 // Extracted so unit tests can exercise notification fan-out without a real GeckoSession or GeckoRuntime.
-internal fun dispatchNotification(payload: NotificationPayload, cb: BrowserEngineCallback) {
-    val title = payload.title ?: return
+internal fun dispatchNotification(payload: NotificationPayload, cb: BrowserEngineCallback): Boolean {
+    val title = payload.title ?: return false
     cb.onNotificationReceived(title, payload.body, payload.iconUrl, payload.tag)
+    return true
 }
 
-// Bridge from the GeckoView 140 WebNotification type to the testable payload.
-internal fun dispatchNotification(notification: WebNotification, cb: BrowserEngineCallback) {
+// Bridge from GeckoView WebNotification to the testable payload.
+internal fun dispatchNotification(notification: WebNotification, cb: BrowserEngineCallback): Boolean =
     dispatchNotification(
         NotificationPayload(
             title = notification.title,
@@ -45,7 +46,6 @@ internal fun dispatchNotification(notification: WebNotification, cb: BrowserEngi
         ),
         cb,
     )
-}
 
 // Extracted so unit tests can exercise ContentBlocking.Delegate fan-out without a real GeckoSession.
 // event.isBlocking() distinguishes actually-blocked (true) from tracked-but-not-blocked (false).
@@ -103,9 +103,12 @@ class GeckoViewEngine(
         val proxyConfig = lastApp?.let { proxyConfigFor(it) } ?: ProxyConfig.None
         engineManager.getRuntime(proxyConfig).setWebNotificationDelegate(object : WebNotificationDelegate {
             override fun onShowNotification(notification: WebNotification) {
-                dispatchNotification(notification, cb)
+                NotificationDelegateFactory.completeNotificationLifecycle(notification, dispatchNotification(notification, cb))
             }
-            override fun onCloseNotification(notification: WebNotification) = Unit
+
+            override fun onCloseNotification(notification: WebNotification) {
+                NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown = false)
+            }
         })
     }
 
@@ -134,11 +137,11 @@ class GeckoViewEngine(
         // Request a proxy-aware runtime: Tor apps get Socks5("127.0.0.1", 9050); others use ProxyConfig.None.
         engineManager.getRuntime(proxyConfigFor(app)).setWebNotificationDelegate(object : WebNotificationDelegate {
             override fun onShowNotification(notification: WebNotification) {
-                dispatchNotification(notification, callback)
+                NotificationDelegateFactory.completeNotificationLifecycle(notification, dispatchNotification(notification, callback))
             }
 
             override fun onCloseNotification(notification: WebNotification) {
-                // No-op: notification lifecycle management is the caller's concern (Plan 05).
+                NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown = false)
             }
         })
 
@@ -191,7 +194,7 @@ class GeckoViewEngine(
             }
         }
 
-        // ScrollDelegate is the correct GeckoView 140 API for tracking scroll position.
+        // ScrollDelegate tracks the current GeckoView scroll position.
         // ContentDelegate.onScrollChanged does not exist in this API level.
         s.setScrollDelegate(object : GeckoSession.ScrollDelegate {
             override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {

@@ -42,26 +42,24 @@ class GeckoEngineManager(private val context: Context) {
         private const val KEY_VERIFIED = "sha256_verified"
         private const val KEY_SHA256 = "sha256_hash"
 
-        const val GECKO_VERSION = "140.0.20250707120347"
+        const val GECKO_VERSION = "156.0.20260909172920"
         private const val MAVEN_BASE = "https://maven.mozilla.org/maven2/org/mozilla/geckoview"
 
         private val ABI_ARTIFACT = mapOf(
             "arm64-v8a" to "geckoview-arm64-v8a",
             "armeabi-v7a" to "geckoview-armeabi-v7a",
             "x86_64" to "geckoview-x86_64",
-            "x86" to "geckoview-x86",
         )
 
         // SHA-256 of the AAR for each ABI at GECKO_VERSION — fetched from maven.mozilla.org
         private val KNOWN_SHA256 = mapOf(
-            "arm64-v8a" to "ac09410e56d92310a05df56df4eeafbfbcf82243dc66a214b788e2a1b413fa45",
-            "armeabi-v7a" to "34aefeb7a5400a4cec4475d41ee6f231c50f1cd04dd5c82ea550ffa96fffaebf",
-            "x86_64" to "d294025a1c5c8d293677f8a645ff8a39edff3124c53f301917bc02b69e36f612",
-            "x86" to "eec957f0b8242588a846a60e59a524d1fc25adedcd7b520399bfc9da2dfe1409",
+            "arm64-v8a" to "416eea477aee090ac690ce4b56c558ea0acec882bf47520d0b0e2aaa11c65836",
+            "armeabi-v7a" to "706f1122fb334ab662b6adcaf18916bd3bdc49887cab58d06548757187725ef7",
+            "x86_64" to "46f97d82c9d4618deffdfa52d9c9d09b4e79a912e4df4191f515e7e3de9d3033",
         )
 
-        // libmozglue must be loaded before libxul (dependency order)
-        private val PRELOAD_ORDER = listOf("libmozglue.so", "liblgpllibs.so", "libxul.so")
+        internal fun selectSupportedAbi(supportedAbis: Array<String>): String? =
+            supportedAbis.firstOrNull { it in ABI_ARTIFACT }
 
     }
 
@@ -133,7 +131,8 @@ class GeckoEngineManager(private val context: Context) {
     fun isInstalled(): Boolean {
         if (!prefs.getBoolean(KEY_INSTALLED, false)) return false
         if (prefs.getString(KEY_VERSION, null) != GECKO_VERSION) return false
-        val dir = getLibsDir()
+        val abi = selectSupportedAbi(Build.SUPPORTED_ABIS) ?: return false
+        val dir = getLibsDir(abi)
         return dir.exists() && dir.listFiles()?.any { it.extension == "so" } == true
     }
 
@@ -211,9 +210,14 @@ class GeckoEngineManager(private val context: Context) {
     suspend fun downloadAndInstall(version: String = GECKO_VERSION): Boolean =
         withContext(Dispatchers.IO) {
             cancelRequested = false
-            val abi = Build.SUPPORTED_ABIS.firstOrNull()
-                ?.takeIf { it in ABI_ARTIFACT } ?: "arm64-v8a"
-            val artifact = ABI_ARTIFACT[abi]!!
+            val abi = selectSupportedAbi(Build.SUPPORTED_ABIS)
+            if (abi == null) {
+                _installState.value = GeckoInstallState.Error(
+                    "GeckoView is not available for this device ABI: ${Build.SUPPORTED_ABIS.joinToString()}",
+                )
+                return@withContext false
+            }
+            val artifact = ABI_ARTIFACT.getValue(abi)
             val url = "$MAVEN_BASE/$artifact/$version/$artifact-$version.aar"
             Log.i(TAG, "Downloading GeckoView from $url")
 
@@ -296,8 +300,8 @@ class GeckoEngineManager(private val context: Context) {
 
     suspend fun checkForUpdate(): String? = withContext(Dispatchers.IO) {
         try {
-            val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
-            val artifact = ABI_ARTIFACT[abi] ?: ABI_ARTIFACT["arm64-v8a"]!!
+            val abi = selectSupportedAbi(Build.SUPPORTED_ABIS) ?: return@withContext null
+            val artifact = ABI_ARTIFACT.getValue(abi)
             val metaUrl = "$MAVEN_BASE/$artifact/maven-metadata.xml"
             val request = Request.Builder().url(metaUrl).header("User-Agent", "Mozilla/5.0").build()
             val body = httpClient.newCall(request).execute().use { it.body?.string() }
@@ -367,10 +371,8 @@ class GeckoEngineManager(private val context: Context) {
 
     // ── File helpers ──────────────────────────────────────────────────────────
 
-    private fun getLibsDir(): File {
-        val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
-        return File(context.filesDir, "gecko_engine/lib/$abi").also { it.mkdirs() }
-    }
+    private fun getLibsDir(abi: String): File =
+        File(context.filesDir, "gecko_engine/lib/$abi").also { it.mkdirs() }
 
     private fun downloadFile(url: String, dest: File, onProgress: (Float) -> Unit): Boolean {
         val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
@@ -422,7 +424,7 @@ class GeckoEngineManager(private val context: Context) {
     }
 
     private fun extractSoFiles(aarFile: File, abi: String): Boolean {
-        val outDir = getLibsDir()
+        val outDir = getLibsDir(abi)
         val prefix = "jni/$abi/"
         var count = 0
         ZipInputStream(aarFile.inputStream().buffered()).use { zis ->

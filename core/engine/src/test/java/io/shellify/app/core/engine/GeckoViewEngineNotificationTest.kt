@@ -2,6 +2,8 @@ package io.shellify.app.core.engine
 
 import io.mockk.mockk
 import io.mockk.verify
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GeckoViewEngineNotificationTest {
@@ -11,7 +13,7 @@ class GeckoViewEngineNotificationTest {
         val cb = mockk<BrowserEngineCallback>(relaxed = true)
         val payload = NotificationPayload(title = "Hi", body = "Body", iconUrl = "icon", tag = "t1")
 
-        dispatchNotification(payload, cb)
+        assertTrue(dispatchNotification(payload, cb))
 
         verify(exactly = 1) { cb.onNotificationReceived("Hi", "Body", "icon", "t1") }
     }
@@ -21,7 +23,7 @@ class GeckoViewEngineNotificationTest {
         val cb = mockk<BrowserEngineCallback>(relaxed = true)
         val payload = NotificationPayload(title = null, body = "Body", iconUrl = "icon", tag = "t1")
 
-        dispatchNotification(payload, cb)
+        assertFalse(dispatchNotification(payload, cb))
 
         verify(exactly = 0) { cb.onNotificationReceived(any(), any(), any(), any()) }
     }
@@ -29,10 +31,10 @@ class GeckoViewEngineNotificationTest {
     @Test
     fun `dispatchNotification with null body and icon passes nulls`() {
         val cb = mockk<BrowserEngineCallback>(relaxed = true)
-        // tag is @NonNull in GeckoView 140 WebNotification; empty string signals absent tag.
+        // Empty string is used when no notification tag is supplied.
         val payload = NotificationPayload(title = "OK", body = null, iconUrl = null, tag = "")
 
-        dispatchNotification(payload, cb)
+        assertTrue(dispatchNotification(payload, cb))
 
         verify(exactly = 1) { cb.onNotificationReceived("OK", null, null, "") }
     }

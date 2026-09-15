@@ -24,7 +24,7 @@ Without convention plugins, every module would repeat the same 30-line AGP confi
 
 The plugins enforce:
 
-- `compileSdk = 36`, `minSdk = 26`, `targetSdk = 36` (app only) across the board
+- `compileSdk = 37.1`, `minSdk = 26`, `targetSdk = 36` (app only) across the board
 - `JavaVersion.VERSION_17` source/target compatibility
 - `kotlinOptions.jvmTarget = "17"`
 - A consistent default test instrumentation runner
@@ -110,8 +110,8 @@ graph TD
 
 | Setting | Where | Value |
 |---|---|---|
-| `compileSdk` | `AndroidApplicationConventionPlugin`, `AndroidLibraryConventionPlugin` | 36 |
-| `minSdk` | Both Android plugins | 23 |
+| `compileSdk` | `AndroidApplicationConventionPlugin`, `AndroidLibraryConventionPlugin` | 37.1 |
+| `minSdk` | Both Android plugins | 26 |
 | `targetSdk` | Application plugin only | 36 |
 | JVM target | All plugins | 17 |
 | KSP schema output | `:app/build.gradle.kts` `ksp { arg(...) }` | `$projectDir/schemas` |

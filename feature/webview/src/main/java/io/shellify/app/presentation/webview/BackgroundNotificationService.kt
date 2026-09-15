@@ -112,10 +112,17 @@ class BackgroundNotificationService : Service() {
 
             runtime.setWebNotificationDelegate(object : WebNotificationDelegate {
                 override fun onShowNotification(notification: WebNotification) {
-                    val title = notification.title ?: return
-                    cb.onNotificationReceived(title, notification.text, notification.imageUrl, notification.tag)
+                    val title = notification.title
+                    val isShown = title != null
+                    if (title != null) {
+                        cb.onNotificationReceived(title, notification.text, notification.imageUrl, notification.tag)
+                    }
+                    NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown)
                 }
-                override fun onCloseNotification(notification: WebNotification) = Unit
+
+                override fun onCloseNotification(notification: WebNotification) {
+                    NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown = false)
+                }
             })
 
             val settings = GeckoSessionSettings.Builder()

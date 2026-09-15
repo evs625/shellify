@@ -32,7 +32,7 @@ Be respectful and constructive. Harassment, hate speech, or personal attacks wil
 |---|---|
 | Android Studio | Ladybug (2024.2) or newer |
 | JDK | 17 |
-| Android SDK | Compile SDK 36, Min SDK 23 |
+| Android SDK | Compile SDK 37.1, Min SDK 26 |
 
 ### Setup
 
