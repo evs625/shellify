@@ -113,11 +113,18 @@ class BackgroundNotificationService : Service() {
             runtime.setWebNotificationDelegate(object : WebNotificationDelegate {
                 override fun onShowNotification(notification: WebNotification) {
                     val title = notification.title
-                    val isShown = title != null
-                    if (title != null) {
-                        cb.onNotificationReceived(title, notification.text, notification.imageUrl, notification.tag)
+                    if (title == null) {
+                        NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown = false)
+                        return
                     }
-                    NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown)
+                    cb.onNotificationReceived(
+                        title,
+                        notification.text,
+                        notification.imageUrl,
+                        notification.tag,
+                    ) { isShown ->
+                        NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown)
+                    }
                 }
 
                 override fun onCloseNotification(notification: WebNotification) {
@@ -141,8 +148,17 @@ class BackgroundNotificationService : Service() {
 
     private fun buildCallback(webApp: WebApp, dispatcher: PwaNotificationDispatcher): BrowserEngineCallback =
         object : BrowserEngineCallback {
-            override fun onNotificationReceived(title: String, body: String?, iconUrl: String?, tag: String?) {
-                scope.launch { dispatcher.dispatch(webApp, title, body, iconUrl, tag) }
+            override fun onNotificationReceived(
+                title: String,
+                body: String?,
+                iconUrl: String?,
+                tag: String?,
+                onDisplayResult: (Boolean) -> Unit,
+            ) {
+                scope.launch {
+                    val result = dispatcher.dispatch(webApp, title, body, iconUrl, tag)
+                    onDisplayResult(result is PwaNotificationDispatcher.DispatchResult.Posted)
+                }
             }
             override fun onNotificationPermissionRequested(onResult: (Boolean) -> Unit) {
                 // Background — no dialog available; respect the stored permission.

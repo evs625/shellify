@@ -22,7 +22,13 @@ interface BrowserEngineCallback {
         contentLength: Long,
     )
 
-    fun onNotificationReceived(title: String, body: String?, iconUrl: String?, tag: String?)
+    fun onNotificationReceived(
+        title: String,
+        body: String?,
+        iconUrl: String?,
+        tag: String?,
+        onDisplayResult: (Boolean) -> Unit = {},
+    )
 
     fun onNotificationPermissionRequested(onResult: (Boolean) -> Unit)
 

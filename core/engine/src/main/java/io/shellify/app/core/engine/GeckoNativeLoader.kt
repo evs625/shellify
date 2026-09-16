@@ -12,6 +12,12 @@ object GeckoNativeLoader {
     private val PRELOAD_ORDER = listOf("libmozglue.so", "liblgpllibs.so", "libxul.so")
 
     fun injectAndLoad(context: Context) {
+        // Never preload stale native libraries after a GeckoView version bump. The runtime
+        // Java API and downloaded native libraries must always be from the same release.
+        if (!GeckoEngineManager.hasCurrentInstallMetadata(context)) {
+            Log.i(TAG, "Skipping Gecko native preload: installed version is not current")
+            return
+        }
         val abi = GeckoEngineManager.selectSupportedAbi(Build.SUPPORTED_ABIS) ?: return
         val libDir = File(context.filesDir, "gecko_engine/lib/$abi")
         if (!libDir.exists()) return

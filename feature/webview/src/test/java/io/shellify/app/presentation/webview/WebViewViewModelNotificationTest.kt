@@ -137,6 +137,30 @@ class WebViewViewModelNotificationTest {
     }
 
     @Test
+    fun `onNotificationReceived posted reports shown`() = runTest {
+        val vm = vmWith(grantedApp)
+        coEvery { dispatcher.dispatch(any(), any(), any(), any(), any()) } returns DispatchResult.Posted(42)
+        var shown: Boolean? = null
+
+        vm.onNotificationReceived("Title", "Body", null, null) { shown = it }
+        advanceUntilIdle()
+
+        assertEquals(true, shown)
+    }
+
+    @Test
+    fun `onNotificationReceived dropped reports not shown`() = runTest {
+        val vm = vmWith(grantedApp)
+        coEvery { dispatcher.dispatch(any(), any(), any(), any(), any()) } returns DispatchResult.Dropped.DndActive
+        var shown: Boolean? = null
+
+        vm.onNotificationReceived("Title", "Body", null, null) { shown = it }
+        advanceUntilIdle()
+
+        assertEquals(false, shown)
+    }
+
+    @Test
     fun `onNotificationReceived dropped NotAsked shows permission dialog`() = runTest {
         val vm = vmWith(notAskedApp)
         coEvery { dispatcher.dispatch(any(), any(), any(), any(), any()) } returns DispatchResult.Dropped.NotAsked
@@ -146,6 +170,22 @@ class WebViewViewModelNotificationTest {
 
         val state = vm.permissionDialog.value
         assertTrue("dialog must be shown when dispatch returns NotAsked", state is PermissionDialogState.Shown)
+    }
+
+    @Test
+    fun `onNotificationReceived not asked reports not shown when user denies`() = runTest {
+        val vm = vmWith(notAskedApp)
+        coEvery { dispatcher.dispatch(any(), any(), any(), any(), any()) } returns DispatchResult.Dropped.NotAsked
+        var shown: Boolean? = null
+
+        vm.onNotificationReceived("Title", "Body", null, null) { shown = it }
+        advanceUntilIdle()
+        assertEquals(null, shown)
+
+        vm.onPermissionDialogResult(false)
+        advanceUntilIdle()
+
+        assertEquals(false, shown)
     }
 
     @Test

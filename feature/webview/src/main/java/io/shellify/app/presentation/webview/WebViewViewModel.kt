@@ -369,17 +369,35 @@ class WebViewViewModel(
      * Called when the engine or JS bridge delivers a notification.
      * Delegates to PwaNotificationDispatcher for all gating and posting logic.
      */
-    fun onNotificationReceived(title: String, body: String?, iconUrl: String?, tag: String?) {
+    fun onNotificationReceived(
+        title: String,
+        body: String?,
+        iconUrl: String?,
+        tag: String?,
+        onDisplayResult: ((Boolean) -> Unit)? = null,
+    ) {
         val app = currentApp()
-        val disp = notificationDispatcher ?: return
+        val disp = notificationDispatcher
+        if (disp == null) {
+            onDisplayResult?.invoke(false)
+            return
+        }
         viewModelScope.launch {
-            val result = disp.dispatch(app, title, body, iconUrl, tag)
-            if (result == PwaNotificationDispatcher.DispatchResult.Dropped.NotAsked) {
-                onNotificationPermissionRequested { granted ->
-                    if (granted) {
-                        viewModelScope.launch { disp.dispatch(currentApp(), title, body, iconUrl, tag) }
+            when (val result = disp.dispatch(app, title, body, iconUrl, tag)) {
+                is PwaNotificationDispatcher.DispatchResult.Posted -> onDisplayResult?.invoke(true)
+                PwaNotificationDispatcher.DispatchResult.Dropped.NotAsked -> {
+                    onNotificationPermissionRequested { granted ->
+                        if (!granted) {
+                            onDisplayResult?.invoke(false)
+                        } else {
+                            viewModelScope.launch {
+                                val retry = disp.dispatch(currentApp(), title, body, iconUrl, tag)
+                                onDisplayResult?.invoke(retry is PwaNotificationDispatcher.DispatchResult.Posted)
+                            }
+                        }
                     }
                 }
+                else -> onDisplayResult?.invoke(false)
             }
         }
     }

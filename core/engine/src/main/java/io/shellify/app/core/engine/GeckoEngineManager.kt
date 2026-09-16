@@ -61,6 +61,12 @@ class GeckoEngineManager(private val context: Context) {
         internal fun selectSupportedAbi(supportedAbis: Array<String>): String? =
             supportedAbis.firstOrNull { it in ABI_ARTIFACT }
 
+        internal fun hasCurrentInstallMetadata(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return prefs.getBoolean(KEY_INSTALLED, false) &&
+                prefs.getString(KEY_VERSION, null) == GECKO_VERSION
+        }
+
     }
 
     // GeckoView enforces exactly ONE GeckoRuntime per process — a second GeckoRuntime.create()
@@ -129,8 +135,7 @@ class GeckoEngineManager(private val context: Context) {
     }
 
     fun isInstalled(): Boolean {
-        if (!prefs.getBoolean(KEY_INSTALLED, false)) return false
-        if (prefs.getString(KEY_VERSION, null) != GECKO_VERSION) return false
+        if (!hasCurrentInstallMetadata(context)) return false
         val abi = selectSupportedAbi(Build.SUPPORTED_ABIS) ?: return false
         val dir = getLibsDir(abi)
         return dir.exists() && dir.listFiles()?.any { it.extension == "so" } == true
@@ -425,6 +430,11 @@ class GeckoEngineManager(private val context: Context) {
 
     private fun extractSoFiles(aarFile: File, abi: String): Boolean {
         val outDir = getLibsDir(abi)
+        // A version upgrade must not leave native libraries from the previous Gecko build in
+        // place: GeckoNativeLoader loads every .so in this directory. The AAR has already passed
+        // integrity verification before extraction reaches this point.
+        outDir.deleteRecursively()
+        outDir.mkdirs()
         val prefix = "jni/$abi/"
         var count = 0
         ZipInputStream(aarFile.inputStream().buffered()).use { zis ->

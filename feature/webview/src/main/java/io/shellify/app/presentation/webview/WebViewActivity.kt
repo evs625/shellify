@@ -986,8 +986,14 @@ class WebViewActivity : FragmentActivity() {
             ) {
             }
 
-            override fun onNotificationReceived(title: String, body: String?, iconUrl: String?, tag: String?) {
-                viewModel.onNotificationReceived(title, body, iconUrl, tag)
+            override fun onNotificationReceived(
+                title: String,
+                body: String?,
+                iconUrl: String?,
+                tag: String?,
+                onDisplayResult: (Boolean) -> Unit,
+            ) {
+                viewModel.onNotificationReceived(title, body, iconUrl, tag, onDisplayResult)
             }
 
             override fun onNotificationPermissionRequested(onResult: (Boolean) -> Unit) {
