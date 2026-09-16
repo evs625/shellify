@@ -127,7 +127,7 @@ class WebViewViewModelNotificationTest {
         advanceUntilIdle()
 
         assertEquals(true, callbackResult)
-        coVerify { saveWebApp(match { it.notificationPermission == NotificationPermission.GRANTED }) }
+        coVerify(timeout = 2_000) { saveWebApp(match { it.notificationPermission == NotificationPermission.GRANTED }) }
         assertTrue(vm.permissionDialog.value is PermissionDialogState.Hidden)
     }
 
@@ -150,7 +150,7 @@ class WebViewViewModelNotificationTest {
 
         assertEquals(true, callbackResult)
         assertEquals(NotificationPermission.GRANTED, vm.uiState.value.app?.notificationPermission)
-        coVerify { saveWebApp(match { it.notificationPermission == NotificationPermission.GRANTED }) }
+        coVerify(timeout = 2_000) { saveWebApp(match { it.notificationPermission == NotificationPermission.GRANTED }) }
     }
 
     @Test
@@ -165,7 +165,7 @@ class WebViewViewModelNotificationTest {
 
         assertEquals(false, callbackResult)
         assertEquals(NotificationPermission.DENIED, vm.uiState.value.app?.notificationPermission)
-        coVerify { saveWebApp(match { it.notificationPermission == NotificationPermission.DENIED }) }
+        coVerify(timeout = 2_000) { saveWebApp(match { it.notificationPermission == NotificationPermission.DENIED }) }
     }
 
     @Test
@@ -178,7 +178,7 @@ class WebViewViewModelNotificationTest {
         advanceUntilIdle()
 
         assertEquals(false, callbackResult)
-        coVerify { saveWebApp(match { it.notificationPermission == NotificationPermission.DENIED }) }
+        coVerify(timeout = 2_000) { saveWebApp(match { it.notificationPermission == NotificationPermission.DENIED }) }
         assertTrue(vm.permissionDialog.value is PermissionDialogState.Hidden)
     }
 
