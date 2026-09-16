@@ -128,6 +128,7 @@ class BackgroundNotificationService : Service() {
                 }
 
                 override fun onCloseNotification(notification: WebNotification) {
+                    cb.onNotificationClosed(notification.tag)
                     NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown = false)
                 }
             })
@@ -163,6 +164,9 @@ class BackgroundNotificationService : Service() {
             override fun onNotificationPermissionRequested(onResult: (Boolean) -> Unit) {
                 // Background — no dialog available; respect the stored permission.
                 onResult(webApp.notificationPermission == NotificationPermission.GRANTED)
+            }
+            override fun onNotificationClosed(tag: String?) {
+                dispatcher.cancelPostedNotification(webApp, tag)
             }
             override fun onPageStarted(url: String?) = Unit
             override fun onPageFinished(url: String?) = Unit

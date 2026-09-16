@@ -122,6 +122,7 @@ class GeckoViewEngine(
             }
 
             override fun onCloseNotification(notification: WebNotification) {
+                cb.onNotificationClosed(notification.tag)
                 NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown = false)
             }
         })
@@ -147,7 +148,7 @@ class GeckoViewEngine(
         val session = buildSession(uaMode, uaOverride, callback)
         this.session = session
 
-        // WebNotificationDelegate is runtime-scoped (GeckoView 140 API) — one delegate for all sessions.
+        // WebNotificationDelegate is runtime-scoped — one delegate for all sessions.
         // Overwrite on each createView so the active callback is always current.
         // Request a proxy-aware runtime: Tor apps get Socks5("127.0.0.1", 9050); others use ProxyConfig.None.
         engineManager.getRuntime(proxyConfigFor(app)).setWebNotificationDelegate(object : WebNotificationDelegate {
@@ -158,6 +159,7 @@ class GeckoViewEngine(
             }
 
             override fun onCloseNotification(notification: WebNotification) {
+                callback.onNotificationClosed(notification.tag)
                 NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown = false)
             }
         })

@@ -132,6 +132,43 @@ class WebViewViewModelNotificationTest {
     }
 
     @Test
+    fun `permission grant waits for Android OS result before completing callback`() = runTest {
+        val vm = vmWith(notAskedApp)
+        var callbackResult: Boolean? = null
+        vm.onNotificationPermissionRequested { callbackResult = it }
+
+        vm.onPermissionDialogResult(true, awaitOsPermission = true)
+        advanceUntilIdle()
+
+        assertEquals(null, callbackResult)
+        assertEquals(NotificationPermission.NOT_ASKED, vm.uiState.value.app?.notificationPermission)
+        assertTrue(vm.permissionDialog.value is PermissionDialogState.Hidden)
+        coVerify(exactly = 0) { saveWebApp(any()) }
+
+        vm.onPostNotificationsPermissionResult(true)
+        advanceUntilIdle()
+
+        assertEquals(true, callbackResult)
+        assertEquals(NotificationPermission.GRANTED, vm.uiState.value.app?.notificationPermission)
+        coVerify { saveWebApp(match { it.notificationPermission == NotificationPermission.GRANTED }) }
+    }
+
+    @Test
+    fun `deferred Android OS denial completes callback false and persists denied`() = runTest {
+        val vm = vmWith(notAskedApp)
+        var callbackResult: Boolean? = null
+        vm.onNotificationPermissionRequested { callbackResult = it }
+        vm.onPermissionDialogResult(true, awaitOsPermission = true)
+
+        vm.onPostNotificationsPermissionResult(false)
+        advanceUntilIdle()
+
+        assertEquals(false, callbackResult)
+        assertEquals(NotificationPermission.DENIED, vm.uiState.value.app?.notificationPermission)
+        coVerify { saveWebApp(match { it.notificationPermission == NotificationPermission.DENIED }) }
+    }
+
+    @Test
     fun `onPermissionDialogResult false persists denied and invokes pending callback`() = runTest {
         val vm = vmWith(notAskedApp)
         var callbackResult: Boolean? = null
@@ -206,6 +243,15 @@ class WebViewViewModelNotificationTest {
         advanceUntilIdle()
 
         assertEquals(false, shown)
+    }
+
+    @Test
+    fun `onNotificationClosed cancels tracked Android notification`() = runTest {
+        val vm = vmWith(grantedApp)
+
+        vm.onNotificationClosed("gecko-tag")
+
+        io.mockk.verify(exactly = 1) { dispatcher.cancelPostedNotification(grantedApp, "gecko-tag") }
     }
 
     @Test

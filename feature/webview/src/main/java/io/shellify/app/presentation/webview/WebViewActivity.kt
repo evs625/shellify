@@ -182,6 +182,12 @@ class WebViewActivity : FragmentActivity() {
     private val postNotificationsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
+        if (::viewModel.isInitialized) {
+            viewModel.onPostNotificationsPermissionResult(granted)
+            if (granted && ::engine.isInitialized && engine.engineType == EngineType.SYSTEM_WEBVIEW) {
+                engine.reload()
+            }
+        }
         if (!granted) {
             lifecycleScope.launch {
                 android.widget.Toast.makeText(
@@ -454,15 +460,17 @@ class WebViewActivity : FragmentActivity() {
                             TextButton(onClick = {
                                 if (!dialogHandled) {
                                     dialogHandled = true
-                                    viewModel.onPermissionDialogResult(true)
-                                    // pendingPermissionResult callback resolves the JS Promise only
-                                    // when this dialog was triggered by JS requestPermission(); for
-                                    // the notification-arrival path the callback re-dispatches instead.
-                                    requestPostNotificationsPermissionIfNeeded()
-                                    // SystemWebView needs a reload to re-inject NotificationBridge.
-                                    // GeckoView must NOT reload: the reload resets Notification.permission
-                                    // to 'default', breaking timers already scheduled on the page.
-                                    if (engine.engineType == EngineType.SYSTEM_WEBVIEW) engine.reload()
+                                    val awaitOsPermission = needsPostNotificationsPermission()
+                                    viewModel.onPermissionDialogResult(true, awaitOsPermission)
+                                    // Resolve the web/Gecko permission only after Android's permission
+                                    // callback. Retrying before that callback would see the old denied state.
+                                    if (awaitOsPermission) {
+                                        postNotificationsLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                    } else if (engine.engineType == EngineType.SYSTEM_WEBVIEW) {
+                                        // SystemWebView needs a reload to re-inject NotificationBridge.
+                                        // GeckoView must NOT reload: reload resets its permission state.
+                                        engine.reload()
+                                    }
                                 }
                             }) { Text(stringResource(R.string.notification_permission_allow)) }
                         },
@@ -494,14 +502,10 @@ class WebViewActivity : FragmentActivity() {
         }
     }
 
-    private fun requestPostNotificationsPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val permission = android.Manifest.permission.POST_NOTIFICATIONS
-            if (checkSelfPermission(permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                postNotificationsLauncher.launch(permission)
-            }
-        }
-    }
+    private fun needsPostNotificationsPermission(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private fun observeState(app: WebViewServiceProvider, pwaApp: WebApp) {
         lifecycleScope.launch {
@@ -998,6 +1002,10 @@ class WebViewActivity : FragmentActivity() {
 
             override fun onNotificationPermissionRequested(onResult: (Boolean) -> Unit) {
                 viewModel.onNotificationPermissionRequested(onResult)
+            }
+
+            override fun onNotificationClosed(tag: String?) {
+                viewModel.onNotificationClosed(tag)
             }
 
             override fun onRequestIntercepted(url: String, blocked: Boolean) {

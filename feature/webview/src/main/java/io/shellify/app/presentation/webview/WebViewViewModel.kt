@@ -359,8 +359,20 @@ class WebViewViewModel(
      * No-ops if the dialog is not currently shown — guards against double-invocation when
      * Material3 fires onDismissRequest after a button click.
      */
-    fun onPermissionDialogResult(granted: Boolean) {
+    fun onPermissionDialogResult(granted: Boolean, awaitOsPermission: Boolean = false) {
         if (_permissionDialog.value !is PermissionDialogState.Shown) return
+        _permissionDialog.value = PermissionDialogState.Hidden
+        if (granted && awaitOsPermission) return
+        completeNotificationPermission(granted)
+    }
+
+    /** Completes a deferred Android 13+ POST_NOTIFICATIONS decision. */
+    fun onPostNotificationsPermissionResult(granted: Boolean) {
+        if (pendingPermissionResult == null) return
+        completeNotificationPermission(granted)
+    }
+
+    private fun completeNotificationPermission(granted: Boolean) {
         val cb = pendingPermissionResult
         pendingPermissionResult = null
         val newPermission = if (granted) NotificationPermission.GRANTED else NotificationPermission.DENIED
@@ -368,7 +380,6 @@ class WebViewViewModel(
         _uiState.update { it.copy(app = updated) }
         viewModelScope.launch(Dispatchers.IO) { saveWebApp(updated) }
         cb?.invoke(granted)
-        _permissionDialog.value = PermissionDialogState.Hidden
     }
 
     /**
@@ -406,6 +417,10 @@ class WebViewViewModel(
                 else -> onDisplayResult?.invoke(false)
             }
         }
+    }
+
+    fun onNotificationClosed(tag: String?) {
+        notificationDispatcher?.cancelPostedNotification(currentApp(), tag)
     }
 
     private fun currentApp(): WebApp = _uiState.value.app ?: initialApp

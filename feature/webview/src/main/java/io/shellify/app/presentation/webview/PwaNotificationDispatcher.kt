@@ -20,6 +20,8 @@ import io.shellify.app.domain.usecase.GetCategoryByIdUseCase
 import io.shellify.app.domain.usecase.IsDndActiveUseCase
 import io.shellify.app.domain.usecase.SaveNotificationUseCase
 import io.shellify.core.ui.R
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 
 class PwaNotificationDispatcher(
     private val context: Context,
@@ -55,6 +57,10 @@ class PwaNotificationDispatcher(
     },
 ) {
 
+    private data class NotificationKey(val appId: Long, val tag: String)
+
+    private val activeNotificationIds = ConcurrentHashMap<NotificationKey, Int>()
+
     private val smallIcon: Int get() = R.drawable.ic_app_logo_fg
 
     private val isNightMode: Boolean
@@ -71,6 +77,7 @@ class PwaNotificationDispatcher(
             data object RateLimited : Dropped
             data object OsPermissionMissing : Dropped
             data object ChannelDisabled : Dropped
+            data object DispatchFailed : Dropped
         }
     }
 
@@ -106,6 +113,21 @@ class PwaNotificationDispatcher(
         body: String?,
         iconUrl: String?,
         tag: String?,
+    ): DispatchResult = try {
+        dispatchInternal(app, title, body, iconUrl, tag)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.e(TAG, "Notification dispatch failed for app ${app.id}", e)
+        DispatchResult.Dropped.DispatchFailed
+    }
+
+    private suspend fun dispatchInternal(
+        app: WebApp,
+        title: String,
+        body: String?,
+        iconUrl: String?,
+        tag: String?,
     ): DispatchResult {
         // Gate 0: global notifications disabled
         if (!isGlobalNotificationsEnabled()) {
@@ -119,7 +141,7 @@ class PwaNotificationDispatcher(
             return DispatchResult.Dropped.PermissionDenied
         }
 
-        // Gate 2: permission not asked yet — suppress silently
+        // Gate 2: permission not asked yet — suppress until the in-app/OS permission flow completes.
         if (app.notificationPermission == NotificationPermission.NOT_ASKED) {
             Log.d(TAG, "Dropped: permission not asked for app ${app.id}")
             return DispatchResult.Dropped.NotAsked
@@ -148,16 +170,13 @@ class PwaNotificationDispatcher(
         val groupId = if (category != null) "$GROUP_PREFIX${category.id}" else GROUP_ID_DEFAULT
         val groupName = if (category != null) category.name
             else context.getString(R.string.notification_channel_name_default)
-        // Channel is per-app so each app appears as an individual item inside its category group.
         val channelId = NotificationChannelId.forApp(app.isolationId)
         val manager = notificationManagerProvider(context)
 
-        // Create channel group (idempotent). Groups are the category headers; channels are apps.
         manager.createNotificationChannelGroup(
             android.app.NotificationChannelGroup(groupId, groupName)
         )
 
-        // Create per-app channel inside the category group (idempotent — platform deduplicates).
         val channel = NotificationChannel(
             channelId,
             channelNameProvider(app.name),
@@ -168,9 +187,8 @@ class PwaNotificationDispatcher(
         }
         manager.createNotificationChannel(channel)
 
-        // Android preserves user channel settings when an existing channel is recreated. If the
-        // user disabled this app's channel, notify() is silently suppressed, so do not tell
-        // GeckoView that the web notification was shown.
+        // Recreating a channel preserves the user's Android settings. A disabled channel makes
+        // notify() a silent no-op, so report a drop instead of telling Gecko it was shown.
         if (manager.getNotificationChannel(channelId)?.importance == NotificationManager.IMPORTANCE_NONE) {
             Log.d(TAG, "Dropped: Android notification channel disabled for app ${app.id}")
             return DispatchResult.Dropped.ChannelDisabled
@@ -178,7 +196,6 @@ class PwaNotificationDispatcher(
 
         val safeTitle = title.take(MAX_TITLE_LEN)
         val safeBody = (body ?: "").take(MAX_BODY_LEN)
-
         val appIcon: Bitmap? = app.iconPath?.let { path ->
             runCatching { loadScaledBitmap(path) }.getOrNull()
         }
@@ -195,20 +212,44 @@ class PwaNotificationDispatcher(
 
         @Suppress("MagicNumber")
         val notificationId = (app.id.toInt() shl 16) or (System.currentTimeMillis().toInt() and 0xFFFF)
-        @Suppress("MissingPermission") // POST_NOTIFICATIONS declared in app manifest; gated by checkPostPermission above
+        @Suppress("MissingPermission") // POST_NOTIFICATIONS declared in app manifest; gated above.
         manager.notify(notificationId, notification)
 
-        saveNotification(
-            PwaNotification(
-                appId = app.id,
-                title = safeTitle,
-                body = safeBody.ifEmpty { null },
-                iconUrl = iconUrl?.take(MAX_ICON_LEN),
-                timestamp = System.currentTimeMillis(),
-                isRead = false,
+        // From this point the Android notification is displayed. Auxiliary bookkeeping must not
+        // downgrade the Gecko display result if it fails.
+        tag?.let { notificationTag ->
+            val previousId = activeNotificationIds.put(NotificationKey(app.id, notificationTag), notificationId)
+            if (previousId != null && previousId != notificationId) {
+                runCatching { manager.cancel(previousId) }
+                    .onFailure { Log.w(TAG, "Failed to cancel replaced notification $previousId", it) }
+            }
+        }
+
+        try {
+            saveNotification(
+                PwaNotification(
+                    appId = app.id,
+                    title = safeTitle,
+                    body = safeBody.ifEmpty { null },
+                    iconUrl = iconUrl?.take(MAX_ICON_LEN),
+                    timestamp = System.currentTimeMillis(),
+                    isRead = false,
+                )
             )
-        )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Notification posted but history persistence failed for app ${app.id}", e)
+        }
 
         return DispatchResult.Posted(notificationId)
+    }
+
+    /** Cancels the Android notification corresponding to a Gecko WebNotification.close(). */
+    fun cancelPostedNotification(app: WebApp, tag: String?) {
+        val notificationTag = tag ?: return
+        val notificationId = activeNotificationIds.remove(NotificationKey(app.id, notificationTag)) ?: return
+        runCatching { notificationManagerProvider(context).cancel(notificationId) }
+            .onFailure { Log.w(TAG, "Failed to cancel closed notification $notificationId", it) }
     }
 }

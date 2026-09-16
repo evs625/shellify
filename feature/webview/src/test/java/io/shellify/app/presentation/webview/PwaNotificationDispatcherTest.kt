@@ -214,6 +214,50 @@ class PwaNotificationDispatcherTest {
     }
 
     @Test
+    fun `posted notification is cancelled when Gecko closes matching tag`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        coEvery { saveNotification(any()) } returns 1L
+        val dispatcher = buildDispatcher()
+
+        val result = dispatcher.dispatch(app, "Title", "Body", null, "gecko-id")
+        assertTrue(result is DispatchResult.Posted)
+        val postedId = (result as DispatchResult.Posted).notificationId
+
+        dispatcher.cancelPostedNotification(app, "gecko-id")
+
+        io.mockk.verify(exactly = 1) { mockManager.cancel(postedId) }
+    }
+
+    @Test
+    fun `history persistence failure does not downgrade an already posted notification`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        coEvery { saveNotification(any()) } throws IllegalStateException("db unavailable")
+        val dispatcher = buildDispatcher()
+
+        val result = dispatcher.dispatch(app, "Title", "Body", null, "gecko-id")
+
+        assertTrue(result is DispatchResult.Posted)
+        coVerify(exactly = 1) { mockManager.notify(any(), any()) }
+    }
+
+    @Test
+    fun `unexpected dispatch failure becomes explicit drop`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } throws IllegalStateException("count failed")
+        val dispatcher = buildDispatcher()
+
+        val result = dispatcher.dispatch(app, "Title", "Body", null, "gecko-id")
+
+        assertTrue(result is DispatchResult.Dropped.DispatchFailed)
+        coVerify(exactly = 0) { mockManager.notify(any(), any()) }
+    }
+
+    @Test
     fun `dispatch when globally disabled drops as GloballyDisabled before any other gate`() = runTest {
         val app = appWith(NotificationPermission.GRANTED)
         every { isDndActive(any(), any(), any()) } returns false

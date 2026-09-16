@@ -32,6 +32,9 @@ interface BrowserEngineCallback {
 
     fun onNotificationPermissionRequested(onResult: (Boolean) -> Unit)
 
+    /** Called when web content closes a previously displayed notification. */
+    fun onNotificationClosed(tag: String?) {}
+
     fun onRequestIntercepted(url: String, blocked: Boolean) {}
 
     /**
