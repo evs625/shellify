@@ -98,6 +98,26 @@ class WebViewViewModelNotificationTest {
     }
 
     @Test
+    fun `second pending notification permission request is rejected without replacing first callback`() = runTest {
+        val vm = vmWith(notAskedApp)
+        val firstResults = mutableListOf<Boolean>()
+        val secondResults = mutableListOf<Boolean>()
+
+        vm.onNotificationPermissionRequested { firstResults += it }
+        vm.onNotificationPermissionRequested { secondResults += it }
+
+        assertTrue(firstResults.isEmpty())
+        assertEquals(listOf(false), secondResults)
+        assertTrue(vm.permissionDialog.value is PermissionDialogState.Shown)
+
+        vm.onPermissionDialogResult(true)
+        advanceUntilIdle()
+
+        assertEquals(listOf(true), firstResults)
+        assertEquals(listOf(false), secondResults)
+    }
+
+    @Test
     fun `onPermissionDialogResult true persists granted and invokes pending callback`() = runTest {
         val vm = vmWith(notAskedApp)
         var callbackResult: Boolean? = null

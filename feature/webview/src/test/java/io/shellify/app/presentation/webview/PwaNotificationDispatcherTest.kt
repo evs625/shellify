@@ -1,5 +1,7 @@
 package io.shellify.app.presentation.webview
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import androidx.core.app.NotificationManagerCompat
 import io.mockk.coEvery
@@ -68,6 +70,7 @@ class PwaNotificationDispatcherTest {
     @Before
     fun setUp() {
         context = RuntimeEnvironment.getApplication()
+        every { mockManager.getNotificationChannel(any()) } returns null
     }
 
     @Test
@@ -220,6 +223,22 @@ class PwaNotificationDispatcherTest {
         val result = dispatcher.dispatch(app, "Title", "Body", null, null)
 
         assertTrue(result is DispatchResult.Dropped.GloballyDisabled)
+        coVerify(exactly = 0) { mockManager.notify(any(), any()) }
+        coVerify(exactly = 0) { saveNotification(any()) }
+    }
+
+    @Test
+    fun `dispatch with disabled Android channel drops without posting`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED, isolationId = "disabled-channel")
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        every { mockManager.getNotificationChannel(PwaNotificationDispatcher.channelId(app.isolationId)) } returns
+            NotificationChannel("disabled", "Disabled", NotificationManager.IMPORTANCE_NONE)
+        val dispatcher = buildDispatcher()
+
+        val result = dispatcher.dispatch(app, "Title", "Body", null, null)
+
+        assertTrue(result is DispatchResult.Dropped.ChannelDisabled)
         coVerify(exactly = 0) { mockManager.notify(any(), any()) }
         coVerify(exactly = 0) { saveNotification(any()) }
     }

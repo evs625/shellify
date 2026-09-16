@@ -70,6 +70,7 @@ class PwaNotificationDispatcher(
             data object DndActive : Dropped
             data object RateLimited : Dropped
             data object OsPermissionMissing : Dropped
+            data object ChannelDisabled : Dropped
         }
     }
 
@@ -166,6 +167,14 @@ class PwaNotificationDispatcher(
             group = groupId
         }
         manager.createNotificationChannel(channel)
+
+        // Android preserves user channel settings when an existing channel is recreated. If the
+        // user disabled this app's channel, notify() is silently suppressed, so do not tell
+        // GeckoView that the web notification was shown.
+        if (manager.getNotificationChannel(channelId)?.importance == NotificationManager.IMPORTANCE_NONE) {
+            Log.d(TAG, "Dropped: Android notification channel disabled for app ${app.id}")
+            return DispatchResult.Dropped.ChannelDisabled
+        }
 
         val safeTitle = title.take(MAX_TITLE_LEN)
         val safeBody = (body ?: "").take(MAX_BODY_LEN)

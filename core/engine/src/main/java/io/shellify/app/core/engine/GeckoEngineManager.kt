@@ -433,8 +433,14 @@ class GeckoEngineManager(private val context: Context) {
         // A version upgrade must not leave native libraries from the previous Gecko build in
         // place: GeckoNativeLoader loads every .so in this directory. The AAR has already passed
         // integrity verification before extraction reaches this point.
-        outDir.deleteRecursively()
-        outDir.mkdirs()
+        if (outDir.exists() && !outDir.deleteRecursively()) {
+            Log.e(TAG, "Could not clear stale Gecko native libraries from ${outDir.absolutePath}")
+            return false
+        }
+        if (!outDir.mkdirs() && !outDir.isDirectory) {
+            Log.e(TAG, "Could not create Gecko native library directory ${outDir.absolutePath}")
+            return false
+        }
         val prefix = "jni/$abi/"
         var count = 0
         ZipInputStream(aarFile.inputStream().buffered()).use { zis ->

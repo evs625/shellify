@@ -342,6 +342,12 @@ class WebViewViewModel(
             NotificationPermission.GRANTED -> onResult(true)
             NotificationPermission.DENIED -> onResult(false)
             NotificationPermission.NOT_ASKED -> {
+                // Only one permission dialog can be outstanding. A second Gecko notification must
+                // still complete its show/dismiss handshake instead of replacing the first callback.
+                if (pendingPermissionResult != null) {
+                    onResult(false)
+                    return
+                }
                 pendingPermissionResult = onResult
                 _permissionDialog.value = PermissionDialogState.Shown(app.name)
             }
