@@ -377,7 +377,7 @@ class GeckoEngineManager(private val context: Context) {
     // ── File helpers ──────────────────────────────────────────────────────────
 
     private fun getLibsDir(abi: String): File =
-        File(context.filesDir, "gecko_engine/lib/$abi").also { it.mkdirs() }
+        File(context.filesDir, "gecko_engine/lib/$abi")
 
     private fun downloadFile(url: String, dest: File, onProgress: (Float) -> Unit): Boolean {
         val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
