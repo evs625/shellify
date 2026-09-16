@@ -26,6 +26,7 @@ internal data class NotificationPayload(
     val body: String?,
     val iconUrl: String?,
     val tag: String?,
+    val sourceNotificationId: String? = null,
 )
 
 // Extracted so unit tests can exercise notification fan-out without a real GeckoSession or GeckoRuntime.
@@ -39,7 +40,14 @@ internal fun dispatchNotification(
         onDisplayResult(false)
         return
     }
-    cb.onNotificationReceived(title, payload.body, payload.iconUrl, payload.tag, onDisplayResult)
+    cb.onNotificationReceived(
+        title,
+        payload.body,
+        payload.iconUrl,
+        payload.tag,
+        payload.sourceNotificationId,
+        onDisplayResult,
+    )
 }
 
 // Bridge from GeckoView WebNotification to the testable payload.
@@ -54,6 +62,7 @@ internal fun dispatchNotification(
             body = notification.text,
             iconUrl = notification.imageUrl,
             tag = notification.tag,
+            sourceNotificationId = NotificationDelegateFactory.notificationLifecycleId(notification),
         ),
         cb,
         onDisplayResult,
@@ -122,7 +131,10 @@ class GeckoViewEngine(
             }
 
             override fun onCloseNotification(notification: WebNotification) {
-                cb.onNotificationClosed(notification.tag)
+                cb.onNotificationClosed(
+                    notification.tag,
+                    NotificationDelegateFactory.notificationLifecycleId(notification),
+                )
                 NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown = false)
             }
         })
@@ -159,7 +171,10 @@ class GeckoViewEngine(
             }
 
             override fun onCloseNotification(notification: WebNotification) {
-                callback.onNotificationClosed(notification.tag)
+                callback.onNotificationClosed(
+                    notification.tag,
+                    NotificationDelegateFactory.notificationLifecycleId(notification),
+                )
                 NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown = false)
             }
         })

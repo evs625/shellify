@@ -2,6 +2,9 @@ package io.shellify.app.core.engine
 
 import android.os.Handler
 import android.os.Looper
+import android.os.Parcel
+import android.util.Base64
+import java.security.MessageDigest
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.WebNotification
@@ -28,6 +31,25 @@ object NotificationDelegateFactory {
         session.permissionDelegate = buildPermissionDelegate(cb, onPermissionGranted)
     }
 
+
+    /**
+     * Stable identity for one Gecko notification across show/close callbacks.
+     *
+     * GeckoView does not expose its internal notification cookie publicly, but that cookie is
+     * included in WebNotification's Parcelable representation. Hashing the parcel therefore
+     * preserves per-notification identity even when `tag` is blank and when Gecko recreates the
+     * WebNotification object for a later close callback.
+     */
+    fun notificationLifecycleId(notification: WebNotification): String {
+        val parcel = Parcel.obtain()
+        return try {
+            notification.writeToParcel(parcel, 0)
+            val digest = MessageDigest.getInstance("SHA-256").digest(parcel.marshall())
+            Base64.encodeToString(digest, Base64.NO_WRAP)
+        } finally {
+            parcel.recycle()
+        }
+    }
 
     /** Completes GeckoView's notification-display handshake on the Android UI thread. */
     fun completeNotificationLifecycle(notification: WebNotification, isShown: Boolean) {

@@ -20,7 +20,7 @@ import io.shellify.app.domain.usecase.GetCategoryByIdUseCase
 import io.shellify.app.domain.usecase.IsDndActiveUseCase
 import io.shellify.app.domain.usecase.SaveNotificationUseCase
 import io.shellify.core.ui.R
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 
 class PwaNotificationDispatcher(
@@ -57,9 +57,20 @@ class PwaNotificationDispatcher(
     },
 ) {
 
-    private data class NotificationKey(val appId: Long, val tag: String)
+    private data class SourceKey(val appId: Long, val sourceNotificationId: String)
+    private data class TagKey(val appId: Long, val tag: String)
 
-    private val activeNotificationIds = ConcurrentHashMap<NotificationKey, Int>()
+    private sealed interface LifecycleState {
+        data object Pending : LifecycleState
+        data object Closed : LifecycleState
+        data class Posted(val notificationId: Int, val tagKey: TagKey?) : LifecycleState
+    }
+
+    private val lifecycleLock = Any()
+    private val lifecycleStates = mutableMapOf<SourceKey, LifecycleState>()
+    private val sourceByNotificationId = mutableMapOf<Int, SourceKey>()
+    private val notificationIdsByTag = mutableMapOf<TagKey, Int>()
+    private val notificationIdSequence = AtomicInteger((System.currentTimeMillis() and Int.MAX_VALUE.toLong()).toInt())
 
     private val smallIcon: Int get() = R.drawable.ic_app_logo_fg
 
@@ -78,6 +89,7 @@ class PwaNotificationDispatcher(
             data object OsPermissionMissing : Dropped
             data object ChannelDisabled : Dropped
             data object DispatchFailed : Dropped
+            data object ClosedBeforePost : Dropped
         }
     }
 
@@ -107,17 +119,38 @@ class PwaNotificationDispatcher(
         return BitmapFactory.decodeFile(path, opts)
     }
 
+    /** Registers the web-engine notification synchronously before asynchronous dispatch starts. */
+    fun beginNotification(app: WebApp, sourceNotificationId: String?) {
+        val sourceKey = sourceNotificationId?.let { SourceKey(app.id, it) } ?: return
+        synchronized(lifecycleLock) {
+            lifecycleStates.putIfAbsent(sourceKey, LifecycleState.Pending)
+        }
+    }
+
+    /** Clears a pending notification when its permission flow is abandoned without a retry. */
+    fun abandonPendingNotification(app: WebApp, sourceNotificationId: String?) {
+        val sourceKey = sourceNotificationId?.let { SourceKey(app.id, it) } ?: return
+        synchronized(lifecycleLock) {
+            if (lifecycleStates[sourceKey] !is LifecycleState.Posted) {
+                lifecycleStates.remove(sourceKey)
+            }
+        }
+    }
+
     suspend fun dispatch(
         app: WebApp,
         title: String,
         body: String?,
         iconUrl: String?,
         tag: String?,
+        sourceNotificationId: String? = null,
     ): DispatchResult = try {
-        dispatchInternal(app, title, body, iconUrl, tag)
+        dispatchInternal(app, title, body, iconUrl, tag, sourceNotificationId)
     } catch (e: CancellationException) {
+        abandonPendingNotification(app, sourceNotificationId)
         throw e
     } catch (e: Exception) {
+        abandonPendingNotification(app, sourceNotificationId)
         Log.e(TAG, "Notification dispatch failed for app ${app.id}", e)
         DispatchResult.Dropped.DispatchFailed
     }
@@ -128,42 +161,58 @@ class PwaNotificationDispatcher(
         body: String?,
         iconUrl: String?,
         tag: String?,
+        sourceNotificationId: String?,
     ): DispatchResult {
-        // Gate 0: global notifications disabled
+        val sourceKey = sourceNotificationId?.let { SourceKey(app.id, it) }
+        if (sourceKey != null) {
+            synchronized(lifecycleLock) {
+                when (lifecycleStates[sourceKey]) {
+                    LifecycleState.Closed -> {
+                        lifecycleStates.remove(sourceKey)
+                        return DispatchResult.Dropped.ClosedBeforePost
+                    }
+                    null -> lifecycleStates[sourceKey] = LifecycleState.Pending
+                    else -> Unit
+                }
+            }
+        }
+
+        fun drop(result: DispatchResult.Dropped, keepPending: Boolean = false): DispatchResult {
+            if (!keepPending && sourceKey != null) {
+                synchronized(lifecycleLock) {
+                    if (lifecycleStates[sourceKey] !is LifecycleState.Posted) {
+                        lifecycleStates.remove(sourceKey)
+                    }
+                }
+            }
+            return result
+        }
+
         if (!isGlobalNotificationsEnabled()) {
             Log.d(TAG, "Dropped: global notifications disabled")
-            return DispatchResult.Dropped.GloballyDisabled
+            return drop(DispatchResult.Dropped.GloballyDisabled)
         }
-
-        // Gate 1: permission denied
         if (app.notificationPermission == NotificationPermission.DENIED) {
             Log.d(TAG, "Dropped: permission denied for app ${app.id}")
-            return DispatchResult.Dropped.PermissionDenied
+            return drop(DispatchResult.Dropped.PermissionDenied)
         }
-
-        // Gate 2: permission not asked yet — suppress until the in-app/OS permission flow completes.
         if (app.notificationPermission == NotificationPermission.NOT_ASKED) {
             Log.d(TAG, "Dropped: permission not asked for app ${app.id}")
-            return DispatchResult.Dropped.NotAsked
+            return drop(DispatchResult.Dropped.NotAsked, keepPending = true)
         }
-
-        // Gate 3: DND active
         if (isDndActive(app.dndStartHour, app.dndEndHour)) {
             Log.d(TAG, "Dropped: DND active for app ${app.id}")
-            return DispatchResult.Dropped.DndActive
+            return drop(DispatchResult.Dropped.DndActive)
         }
 
-        // Gate 4: rate limit
         val todayCount = countToday(app.id)
         if (todayCount >= RATE_LIMIT_PER_DAY) {
             Log.d(TAG, "Dropped: rate limit reached ($todayCount) for app ${app.id}")
-            return DispatchResult.Dropped.RateLimited
+            return drop(DispatchResult.Dropped.RateLimited)
         }
-
-        // Gate 5: OS-level POST_NOTIFICATIONS permission
         if (!checkPostPermission(context)) {
             Log.d(TAG, "Dropped: OS POST_NOTIFICATIONS permission missing for app ${app.id}")
-            return DispatchResult.Dropped.OsPermissionMissing
+            return drop(DispatchResult.Dropped.OsPermissionMissing)
         }
 
         val category = app.categoryId?.let { getCategoryById?.invoke(it) }
@@ -176,7 +225,6 @@ class PwaNotificationDispatcher(
         manager.createNotificationChannelGroup(
             android.app.NotificationChannelGroup(groupId, groupName)
         )
-
         val channel = NotificationChannel(
             channelId,
             channelNameProvider(app.name),
@@ -187,11 +235,9 @@ class PwaNotificationDispatcher(
         }
         manager.createNotificationChannel(channel)
 
-        // Recreating a channel preserves the user's Android settings. A disabled channel makes
-        // notify() a silent no-op, so report a drop instead of telling Gecko it was shown.
         if (manager.getNotificationChannel(channelId)?.importance == NotificationManager.IMPORTANCE_NONE) {
             Log.d(TAG, "Dropped: Android notification channel disabled for app ${app.id}")
-            return DispatchResult.Dropped.ChannelDisabled
+            return drop(DispatchResult.Dropped.ChannelDisabled)
         }
 
         val safeTitle = title.take(MAX_TITLE_LEN)
@@ -199,7 +245,6 @@ class PwaNotificationDispatcher(
         val appIcon: Bitmap? = app.iconPath?.let { path ->
             runCatching { loadScaledBitmap(path) }.getOrNull()
         }
-
         val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(smallIcon)
             .setColor(if (isNightMode) Color.WHITE else Color.BLACK)
@@ -210,19 +255,40 @@ class PwaNotificationDispatcher(
             .setAutoCancel(true)
             .build()
 
-        @Suppress("MagicNumber")
-        val notificationId = (app.id.toInt() shl 16) or (System.currentTimeMillis().toInt() and 0xFFFF)
-        @Suppress("MissingPermission") // POST_NOTIFICATIONS declared in app manifest; gated above.
-        manager.notify(notificationId, notification)
+        val notificationId = notificationIdSequence.getAndUpdate { current ->
+            if (current == Int.MAX_VALUE) 1 else current + 1
+        }
+        val tagKey = tag?.takeIf { it.isNotEmpty() }?.let { TagKey(app.id, it) }
+        var replacedNotificationId: Int? = null
 
-        // From this point the Android notification is displayed. Auxiliary bookkeeping must not
-        // downgrade the Gecko display result if it fails.
-        tag?.let { notificationTag ->
-            val previousId = activeNotificationIds.put(NotificationKey(app.id, notificationTag), notificationId)
-            if (previousId != null && previousId != notificationId) {
-                runCatching { manager.cancel(previousId) }
-                    .onFailure { Log.w(TAG, "Failed to cancel replaced notification $previousId", it) }
+        synchronized(lifecycleLock) {
+            if (sourceKey != null && lifecycleStates[sourceKey] == LifecycleState.Closed) {
+                lifecycleStates.remove(sourceKey)
+                return DispatchResult.Dropped.ClosedBeforePost
             }
+
+            @Suppress("MissingPermission") // POST_NOTIFICATIONS declared in app manifest; gated above.
+            manager.notify(notificationId, notification)
+
+            if (sourceKey != null) {
+                lifecycleStates[sourceKey] = LifecycleState.Posted(notificationId, tagKey)
+                sourceByNotificationId[notificationId] = sourceKey
+            }
+            if (tagKey != null) {
+                replacedNotificationId = notificationIdsByTag.put(tagKey, notificationId)
+                replacedNotificationId?.let { replacedId ->
+                    if (replacedId != notificationId) {
+                        sourceByNotificationId.remove(replacedId)?.let { previousSource ->
+                            lifecycleStates.remove(previousSource)
+                        }
+                    }
+                }
+            }
+        }
+
+        replacedNotificationId?.takeIf { it != notificationId }?.let { replacedId ->
+            runCatching { manager.cancel(replacedId) }
+                .onFailure { Log.w(TAG, "Failed to cancel replaced notification $replacedId", it) }
         }
 
         try {
@@ -245,11 +311,46 @@ class PwaNotificationDispatcher(
         return DispatchResult.Posted(notificationId)
     }
 
-    /** Cancels the Android notification corresponding to a Gecko WebNotification.close(). */
-    fun cancelPostedNotification(app: WebApp, tag: String?) {
-        val notificationTag = tag ?: return
-        val notificationId = activeNotificationIds.remove(NotificationKey(app.id, notificationTag)) ?: return
-        runCatching { notificationManagerProvider(context).cancel(notificationId) }
-            .onFailure { Log.w(TAG, "Failed to cancel closed notification $notificationId", it) }
+    /** Cancels the Android notification corresponding to a web-engine close callback. */
+    fun cancelPostedNotification(app: WebApp, tag: String?, sourceNotificationId: String? = null) {
+        val sourceKey = sourceNotificationId?.let { SourceKey(app.id, it) }
+        val tagKey = tag?.takeIf { it.isNotEmpty() }?.let { TagKey(app.id, it) }
+        var notificationId: Int? = null
+
+        synchronized(lifecycleLock) {
+            if (sourceKey != null) {
+                when (val state = lifecycleStates[sourceKey]) {
+                    LifecycleState.Pending -> {
+                        lifecycleStates[sourceKey] = LifecycleState.Closed
+                        return
+                    }
+                    LifecycleState.Closed -> return
+                    is LifecycleState.Posted -> {
+                        notificationId = state.notificationId
+                        lifecycleStates.remove(sourceKey)
+                        sourceByNotificationId.remove(state.notificationId)
+                        state.tagKey?.let { postedTag ->
+                            if (notificationIdsByTag[postedTag] == state.notificationId) {
+                                notificationIdsByTag.remove(postedTag)
+                            }
+                        }
+                    }
+                    null -> return
+                }
+            } else if (tagKey != null) {
+                notificationId = notificationIdsByTag.remove(tagKey)
+                notificationId?.let { id ->
+                    sourceByNotificationId.remove(id)?.let { source -> lifecycleStates.remove(source) }
+                }
+            } else {
+                return
+            }
+        }
+
+        notificationId?.let { id ->
+            runCatching { notificationManagerProvider(context).cancel(id) }
+                .onFailure { Log.w(TAG, "Failed to cancel closed notification $id", it) }
+        }
     }
+
 }

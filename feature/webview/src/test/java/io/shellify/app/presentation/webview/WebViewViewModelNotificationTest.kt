@@ -194,6 +194,26 @@ class WebViewViewModelNotificationTest {
     }
 
     @Test
+    fun `source notification is registered synchronously before dispatch coroutine`() = runTest {
+        val vm = vmWith(grantedApp)
+        coEvery { dispatcher.dispatch(any(), any(), any(), any(), any(), any()) } returns DispatchResult.Posted(42)
+
+        vm.onNotificationReceived(
+            "Title",
+            "Body",
+            null,
+            "",
+            sourceNotificationId = "source-1",
+        )
+
+        io.mockk.verify(exactly = 1) { dispatcher.beginNotification(grantedApp, "source-1") }
+        advanceUntilIdle()
+        coVerify(exactly = 1) {
+            dispatcher.dispatch(grantedApp, "Title", "Body", null, "", "source-1")
+        }
+    }
+
+    @Test
     fun `onNotificationReceived posted reports shown`() = runTest {
         val vm = vmWith(grantedApp)
         coEvery { dispatcher.dispatch(any(), any(), any(), any(), any()) } returns DispatchResult.Posted(42)
@@ -249,9 +269,11 @@ class WebViewViewModelNotificationTest {
     fun `onNotificationClosed cancels tracked Android notification`() = runTest {
         val vm = vmWith(grantedApp)
 
-        vm.onNotificationClosed("gecko-tag")
+        vm.onNotificationClosed("gecko-tag", "source-1")
 
-        io.mockk.verify(exactly = 1) { dispatcher.cancelPostedNotification(grantedApp, "gecko-tag") }
+        io.mockk.verify(exactly = 1) {
+            dispatcher.cancelPostedNotification(grantedApp, "gecko-tag", "source-1")
+        }
     }
 
     @Test

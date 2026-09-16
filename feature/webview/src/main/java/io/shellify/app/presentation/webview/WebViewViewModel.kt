@@ -391,6 +391,7 @@ class WebViewViewModel(
         body: String?,
         iconUrl: String?,
         tag: String?,
+        sourceNotificationId: String? = null,
         onDisplayResult: ((Boolean) -> Unit)? = null,
     ) {
         val app = currentApp()
@@ -399,16 +400,26 @@ class WebViewViewModel(
             onDisplayResult?.invoke(false)
             return
         }
+        // Register synchronously so a Gecko close callback cannot race ahead of the coroutine.
+        disp.beginNotification(app, sourceNotificationId)
         viewModelScope.launch {
-            when (val result = disp.dispatch(app, title, body, iconUrl, tag)) {
+            when (val result = disp.dispatch(app, title, body, iconUrl, tag, sourceNotificationId)) {
                 is PwaNotificationDispatcher.DispatchResult.Posted -> onDisplayResult?.invoke(true)
                 PwaNotificationDispatcher.DispatchResult.Dropped.NotAsked -> {
                     onNotificationPermissionRequested { granted ->
                         if (!granted) {
+                            disp.abandonPendingNotification(currentApp(), sourceNotificationId)
                             onDisplayResult?.invoke(false)
                         } else {
                             viewModelScope.launch {
-                                val retry = disp.dispatch(currentApp(), title, body, iconUrl, tag)
+                                val retry = disp.dispatch(
+                                    currentApp(),
+                                    title,
+                                    body,
+                                    iconUrl,
+                                    tag,
+                                    sourceNotificationId,
+                                )
                                 onDisplayResult?.invoke(retry is PwaNotificationDispatcher.DispatchResult.Posted)
                             }
                         }
@@ -419,8 +430,8 @@ class WebViewViewModel(
         }
     }
 
-    fun onNotificationClosed(tag: String?) {
-        notificationDispatcher?.cancelPostedNotification(currentApp(), tag)
+    fun onNotificationClosed(tag: String?, sourceNotificationId: String? = null) {
+        notificationDispatcher?.cancelPostedNotification(currentApp(), tag, sourceNotificationId)
     }
 
     private fun currentApp(): WebApp = _uiState.value.app ?: initialApp

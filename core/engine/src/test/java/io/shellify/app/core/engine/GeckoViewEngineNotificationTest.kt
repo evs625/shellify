@@ -15,14 +15,14 @@ class GeckoViewEngineNotificationTest {
         val payload = NotificationPayload(title = "Hi", body = "Body", iconUrl = "icon", tag = "t1")
         var shown: Boolean? = null
         val resultCallback = slot<(Boolean) -> Unit>()
-        every { cb.onNotificationReceived("Hi", "Body", "icon", "t1", capture(resultCallback)) } answers {
+        every { cb.onNotificationReceived("Hi", "Body", "icon", "t1", null, capture(resultCallback)) } answers {
             resultCallback.captured.invoke(true)
         }
 
         dispatchNotification(payload, cb) { shown = it }
 
         assertEquals(true, shown)
-        verify(exactly = 1) { cb.onNotificationReceived("Hi", "Body", "icon", "t1", any()) }
+        verify(exactly = 1) { cb.onNotificationReceived("Hi", "Body", "icon", "t1", null, any()) }
     }
 
     @Test
@@ -34,7 +34,7 @@ class GeckoViewEngineNotificationTest {
         dispatchNotification(payload, cb) { shown = it }
 
         assertEquals(false, shown)
-        verify(exactly = 0) { cb.onNotificationReceived(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { cb.onNotificationReceived(any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -44,6 +44,6 @@ class GeckoViewEngineNotificationTest {
 
         dispatchNotification(payload, cb) {}
 
-        verify(exactly = 1) { cb.onNotificationReceived("OK", null, null, "", any()) }
+        verify(exactly = 1) { cb.onNotificationReceived("OK", null, null, "", null, any()) }
     }
 }

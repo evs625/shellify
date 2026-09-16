@@ -995,17 +995,25 @@ class WebViewActivity : FragmentActivity() {
                 body: String?,
                 iconUrl: String?,
                 tag: String?,
+                sourceNotificationId: String?,
                 onDisplayResult: (Boolean) -> Unit,
             ) {
-                viewModel.onNotificationReceived(title, body, iconUrl, tag, onDisplayResult)
+                viewModel.onNotificationReceived(
+                    title,
+                    body,
+                    iconUrl,
+                    tag,
+                    sourceNotificationId,
+                    onDisplayResult,
+                )
             }
 
             override fun onNotificationPermissionRequested(onResult: (Boolean) -> Unit) {
                 viewModel.onNotificationPermissionRequested(onResult)
             }
 
-            override fun onNotificationClosed(tag: String?) {
-                viewModel.onNotificationClosed(tag)
+            override fun onNotificationClosed(tag: String?, sourceNotificationId: String?) {
+                viewModel.onNotificationClosed(tag, sourceNotificationId)
             }
 
             override fun onRequestIntercepted(url: String, blocked: Boolean) {

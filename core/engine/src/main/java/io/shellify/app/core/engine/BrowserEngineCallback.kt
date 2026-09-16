@@ -27,13 +27,14 @@ interface BrowserEngineCallback {
         body: String?,
         iconUrl: String?,
         tag: String?,
+        sourceNotificationId: String? = null,
         onDisplayResult: (Boolean) -> Unit = {},
     )
 
     fun onNotificationPermissionRequested(onResult: (Boolean) -> Unit)
 
-    /** Called when web content closes a previously displayed notification. */
-    fun onNotificationClosed(tag: String?) {}
+    /** Called when web content closes a notification from the same engine lifecycle. */
+    fun onNotificationClosed(tag: String?, sourceNotificationId: String? = null) {}
 
     fun onRequestIntercepted(url: String, blocked: Boolean) {}
 

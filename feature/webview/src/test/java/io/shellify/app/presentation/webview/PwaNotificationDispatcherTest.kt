@@ -231,6 +231,70 @@ class PwaNotificationDispatcherTest {
     }
 
     @Test
+    fun `untagged Gecko notifications keep independent lifecycle identities`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        coEvery { saveNotification(any()) } returns 1L
+        val dispatcher = buildDispatcher()
+
+        dispatcher.beginNotification(app, "source-1")
+        val first = dispatcher.dispatch(app, "First", "Body", null, "", "source-1")
+        dispatcher.beginNotification(app, "source-2")
+        val second = dispatcher.dispatch(app, "Second", "Body", null, "", "source-2")
+
+        assertTrue(first is DispatchResult.Posted)
+        assertTrue(second is DispatchResult.Posted)
+        val firstId = (first as DispatchResult.Posted).notificationId
+        val secondId = (second as DispatchResult.Posted).notificationId
+        assertTrue(firstId != secondId)
+        io.mockk.verify(exactly = 0) { mockManager.cancel(firstId) }
+
+        dispatcher.cancelPostedNotification(app, "", "source-1")
+
+        io.mockk.verify(exactly = 1) { mockManager.cancel(firstId) }
+        io.mockk.verify(exactly = 0) { mockManager.cancel(secondId) }
+    }
+
+    @Test
+    fun `close before asynchronous post prevents notification resurrection`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        coEvery { saveNotification(any()) } returns 1L
+        val dispatcher = buildDispatcher()
+
+        dispatcher.beginNotification(app, "source-closed")
+        dispatcher.cancelPostedNotification(app, "", "source-closed")
+        val result = dispatcher.dispatch(app, "Closed", "Body", null, "", "source-closed")
+
+        assertTrue(result is DispatchResult.Dropped.ClosedBeforePost)
+        coVerify(exactly = 0) { mockManager.notify(any(), any()) }
+        coVerify(exactly = 0) { saveNotification(any()) }
+    }
+
+    @Test
+    fun `tag replacement does not let old source close cancel replacement`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        coEvery { saveNotification(any()) } returns 1L
+        val dispatcher = buildDispatcher()
+
+        dispatcher.beginNotification(app, "old-source")
+        val first = dispatcher.dispatch(app, "Old", "Body", null, "shared", "old-source") as DispatchResult.Posted
+        dispatcher.beginNotification(app, "new-source")
+        val second = dispatcher.dispatch(app, "New", "Body", null, "shared", "new-source") as DispatchResult.Posted
+
+        io.mockk.verify(exactly = 1) { mockManager.cancel(first.notificationId) }
+        dispatcher.cancelPostedNotification(app, "shared", "old-source")
+        io.mockk.verify(exactly = 0) { mockManager.cancel(second.notificationId) }
+
+        dispatcher.cancelPostedNotification(app, "shared", "new-source")
+        io.mockk.verify(exactly = 1) { mockManager.cancel(second.notificationId) }
+    }
+
+    @Test
     fun `history persistence failure does not downgrade an already posted notification`() = runTest {
         val app = appWith(NotificationPermission.GRANTED)
         every { isDndActive(any(), any(), any()) } returns false

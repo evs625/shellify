@@ -117,18 +117,23 @@ class BackgroundNotificationService : Service() {
                         NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown = false)
                         return
                     }
+                    val sourceNotificationId = NotificationDelegateFactory.notificationLifecycleId(notification)
                     cb.onNotificationReceived(
                         title,
                         notification.text,
                         notification.imageUrl,
                         notification.tag,
+                        sourceNotificationId,
                     ) { isShown ->
                         NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown)
                     }
                 }
 
                 override fun onCloseNotification(notification: WebNotification) {
-                    cb.onNotificationClosed(notification.tag)
+                    cb.onNotificationClosed(
+                        notification.tag,
+                        NotificationDelegateFactory.notificationLifecycleId(notification),
+                    )
                     NotificationDelegateFactory.completeNotificationLifecycle(notification, isShown = false)
                 }
             })
@@ -154,10 +159,22 @@ class BackgroundNotificationService : Service() {
                 body: String?,
                 iconUrl: String?,
                 tag: String?,
+                sourceNotificationId: String?,
                 onDisplayResult: (Boolean) -> Unit,
             ) {
+                dispatcher.beginNotification(webApp, sourceNotificationId)
                 scope.launch {
-                    val result = dispatcher.dispatch(webApp, title, body, iconUrl, tag)
+                    val result = dispatcher.dispatch(
+                        webApp,
+                        title,
+                        body,
+                        iconUrl,
+                        tag,
+                        sourceNotificationId,
+                    )
+                    if (result !is PwaNotificationDispatcher.DispatchResult.Posted) {
+                        dispatcher.abandonPendingNotification(webApp, sourceNotificationId)
+                    }
                     onDisplayResult(result is PwaNotificationDispatcher.DispatchResult.Posted)
                 }
             }
@@ -165,8 +182,8 @@ class BackgroundNotificationService : Service() {
                 // Background — no dialog available; respect the stored permission.
                 onResult(webApp.notificationPermission == NotificationPermission.GRANTED)
             }
-            override fun onNotificationClosed(tag: String?) {
-                dispatcher.cancelPostedNotification(webApp, tag)
+            override fun onNotificationClosed(tag: String?, sourceNotificationId: String?) {
+                dispatcher.cancelPostedNotification(webApp, tag, sourceNotificationId)
             }
             override fun onPageStarted(url: String?) = Unit
             override fun onPageFinished(url: String?) = Unit
