@@ -177,4 +177,81 @@ class WebViewViewModelNotificationTest {
         // State from the first (granted) call must not be overwritten by the second (denied)
         assertEquals(NotificationPermission.GRANTED, vm.uiState.value.app?.notificationPermission)
     }
+    @Test
+    fun `concurrent not asked permission requests both receive one decision`() = runTest {
+        val vm = vmWith(notAskedApp)
+        val results = mutableListOf<Boolean>()
+
+        vm.onNotificationPermissionRequested { results += it }
+        vm.onNotificationPermissionRequested { results += it }
+        vm.onPermissionDialogResult(true)
+        advanceUntilIdle()
+
+        assertEquals(listOf(true, true), results)
+        coVerify(exactly = 1) { saveWebApp(match { it.notificationPermission == NotificationPermission.GRANTED }) }
+    }
+
+    @Test
+    fun `Gecko posted notification reports displayed`() = runTest {
+        val vm = vmWith(grantedApp)
+        val handle = mockk<PwaNotificationDispatcher.GeckoNotificationHandle>()
+        every { dispatcher.beginGeckoNotification(grantedApp, "tag") } returns handle
+        coEvery { dispatcher.dispatchGecko(handle, grantedApp, "Title", "Body", null) } returns DispatchResult.Posted(42)
+        var displayed: Boolean? = null
+
+        vm.onGeckoNotificationReceived("Title", "Body", null, "tag") { displayed = it }
+        advanceUntilIdle()
+
+        assertEquals(true, displayed)
+        coVerify(exactly = 1) { dispatcher.dispatchGecko(handle, grantedApp, "Title", "Body", null) }
+        coVerify(exactly = 0) { dispatcher.finishGeckoNotification(handle) }
+    }
+
+    @Test
+    fun `Gecko dropped notification reports not displayed and releases handle`() = runTest {
+        val vm = vmWith(grantedApp)
+        val handle = mockk<PwaNotificationDispatcher.GeckoNotificationHandle>()
+        every { dispatcher.beginGeckoNotification(grantedApp, "tag") } returns handle
+        coEvery { dispatcher.dispatchGecko(handle, grantedApp, any(), any(), any()) } returns DispatchResult.Dropped.ChannelDisabled
+        var displayed: Boolean? = null
+
+        vm.onGeckoNotificationReceived("Title", null, null, "tag") { displayed = it }
+        advanceUntilIdle()
+
+        assertEquals(false, displayed)
+        coVerify(exactly = 1) { dispatcher.finishGeckoNotification(handle) }
+    }
+
+    @Test
+    fun `Gecko not asked waits for permission then retries same handle`() = runTest {
+        val vm = vmWith(notAskedApp)
+        val handle = mockk<PwaNotificationDispatcher.GeckoNotificationHandle>()
+        every { dispatcher.beginGeckoNotification(notAskedApp, "tag") } returns handle
+        coEvery { dispatcher.dispatchGecko(handle, notAskedApp, any(), any(), any()) } returns DispatchResult.Dropped.NotAsked
+        coEvery {
+            dispatcher.dispatchGecko(handle, match { it.notificationPermission == NotificationPermission.GRANTED }, any(), any(), any())
+        } returns DispatchResult.Posted(7)
+        var displayed: Boolean? = null
+
+        vm.onGeckoNotificationReceived("Title", "Body", null, "tag") { displayed = it }
+        advanceUntilIdle()
+        assertTrue(vm.permissionDialog.value is PermissionDialogState.Shown)
+        assertEquals(null, displayed)
+
+        vm.onPermissionDialogResult(true)
+        advanceUntilIdle()
+
+        assertEquals(true, displayed)
+        coVerify(exactly = 2) { dispatcher.dispatchGecko(handle, any(), "Title", "Body", null) }
+    }
+
+    @Test
+    fun `Gecko close delegates public tag to dispatcher`() = runTest {
+        val vm = vmWith(grantedApp)
+
+        vm.onGeckoNotificationClosed("gecko-tag")
+
+        io.mockk.verify(exactly = 1) { dispatcher.closeGeckoNotification(grantedApp, "gecko-tag") }
+    }
+
 }

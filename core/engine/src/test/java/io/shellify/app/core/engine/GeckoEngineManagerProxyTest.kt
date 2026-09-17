@@ -1,6 +1,7 @@
 package io.shellify.app.core.engine
 
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Before
@@ -92,4 +93,15 @@ class GeckoEngineManagerProxyTest {
         // No getRuntime() call — runtime is null. Must not throw.
         manager.clearDataForContext("test-isolation-id")
     }
+    @Test
+    fun `G9 - singleton runtime receives ActivityDelegate exactly once`() {
+        val runtime = mockk<GeckoRuntime>(relaxed = true)
+        manager.runtimeFactory = { runtime }
+
+        manager.getRuntime(ProxyConfig.None)
+        manager.getRuntime(ProxyConfig.Socks5("127.0.0.1", 9050))
+
+        verify(exactly = 1) { runtime.setActivityDelegate(any()) }
+    }
+
 }

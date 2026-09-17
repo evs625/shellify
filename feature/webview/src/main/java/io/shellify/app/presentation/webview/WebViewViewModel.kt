@@ -53,8 +53,8 @@ class WebViewViewModel(
     private val _permissionDialog = MutableStateFlow<PermissionDialogState>(PermissionDialogState.Hidden)
     val permissionDialog: StateFlow<PermissionDialogState> = _permissionDialog.asStateFlow()
 
-    // Holds the pending callback from the engine until the user answers the dialog.
-    private var pendingPermissionResult: ((Boolean) -> Unit)? = null
+    // Every simultaneous Gecko/JS permission request must receive the same user decision.
+    private val pendingPermissionResults = mutableListOf<(Boolean) -> Unit>()
 
     private var loadFailed = false
     private val visitedUrls = mutableSetOf<String>()
@@ -342,8 +342,10 @@ class WebViewViewModel(
             NotificationPermission.GRANTED -> onResult(true)
             NotificationPermission.DENIED -> onResult(false)
             NotificationPermission.NOT_ASKED -> {
-                pendingPermissionResult = onResult
-                _permissionDialog.value = PermissionDialogState.Shown(app.name)
+                pendingPermissionResults += onResult
+                if (_permissionDialog.value !is PermissionDialogState.Shown) {
+                    _permissionDialog.value = PermissionDialogState.Shown(app.name)
+                }
             }
         }
     }
@@ -355,13 +357,13 @@ class WebViewViewModel(
      */
     fun onPermissionDialogResult(granted: Boolean) {
         if (_permissionDialog.value !is PermissionDialogState.Shown) return
-        val cb = pendingPermissionResult
-        pendingPermissionResult = null
+        val callbacks = pendingPermissionResults.toList()
+        pendingPermissionResults.clear()
         val newPermission = if (granted) NotificationPermission.GRANTED else NotificationPermission.DENIED
         val updated = currentApp().copy(notificationPermission = newPermission)
         _uiState.update { it.copy(app = updated) }
         viewModelScope.launch(Dispatchers.IO) { saveWebApp(updated) }
-        cb?.invoke(granted)
+        callbacks.forEach { it(granted) }
         _permissionDialog.value = PermissionDialogState.Hidden
     }
 
@@ -382,6 +384,66 @@ class WebViewViewModel(
                 }
             }
         }
+    }
+
+    fun onGeckoNotificationReceived(
+        title: String,
+        body: String?,
+        iconUrl: String?,
+        tag: String,
+        onDisplayed: (Boolean) -> Unit,
+    ) {
+        val dispatcher = notificationDispatcher
+        if (dispatcher == null) {
+            onDisplayed(false)
+            return
+        }
+        val app = currentApp()
+        val handle = dispatcher.beginGeckoNotification(app, tag)
+        viewModelScope.launch {
+            val result = dispatcher.dispatchGecko(handle, app, title, body, iconUrl)
+            if (result == PwaNotificationDispatcher.DispatchResult.Dropped.NotAsked) {
+                requestPermissionAndRetryGecko(dispatcher, handle, title, body, iconUrl, onDisplayed)
+            } else {
+                completeGeckoNotification(dispatcher, handle, result, onDisplayed)
+            }
+        }
+    }
+
+    fun onGeckoNotificationClosed(tag: String) {
+        notificationDispatcher?.closeGeckoNotification(currentApp(), tag)
+    }
+
+    private fun requestPermissionAndRetryGecko(
+        dispatcher: PwaNotificationDispatcher,
+        handle: PwaNotificationDispatcher.GeckoNotificationHandle,
+        title: String,
+        body: String?,
+        iconUrl: String?,
+        onDisplayed: (Boolean) -> Unit,
+    ) {
+        onNotificationPermissionRequested { granted ->
+            if (!granted) {
+                dispatcher.finishGeckoNotification(handle)
+                onDisplayed(false)
+                return@onNotificationPermissionRequested
+            }
+            viewModelScope.launch {
+                val result = dispatcher.dispatchGecko(handle, currentApp(), title, body, iconUrl)
+                completeGeckoNotification(dispatcher, handle, result, onDisplayed)
+            }
+        }
+    }
+
+    private fun completeGeckoNotification(
+        dispatcher: PwaNotificationDispatcher,
+        handle: PwaNotificationDispatcher.GeckoNotificationHandle,
+        result: PwaNotificationDispatcher.DispatchResult,
+        onDisplayed: (Boolean) -> Unit,
+    ) {
+        val displayed = result is PwaNotificationDispatcher.DispatchResult.Posted
+        if (!displayed) dispatcher.finishGeckoNotification(handle)
+        onDisplayed(displayed)
     }
 
     private fun currentApp(): WebApp = _uiState.value.app ?: initialApp

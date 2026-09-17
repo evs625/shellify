@@ -25,7 +25,8 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
                 showSkippedStandardStreams = false
             }
             extensions.configure<LibraryExtension> {
-                compileSdk = 36
+                compileSdk = 37
+                compileSdkMinor = 1
                 defaultConfig {
                     minSdk = 26
                     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

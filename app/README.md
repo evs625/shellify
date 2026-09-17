@@ -126,3 +126,4 @@ graph TD
 | Detekt | `config/detekt/detekt.yml` (root) | Applied via `detekt { }` block in `build.gradle.kts` |
 | Lint | `config/lint/lint.xml` (root) | Applied via `lint { lintConfig = ... }` |
 | Screenshot goldens | `src/test/snapshots/` | Committed to VCS; regenerate with `recordRoborazziDebug` |
+| Gecko native packaging | `app/build.gradle.kts` → `packaging.jniLibs` | Excludes all GeckoView AAR `.so` files; verified runtime downloads own the device-ABI native payload |

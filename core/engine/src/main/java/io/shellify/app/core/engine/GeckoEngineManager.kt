@@ -1,9 +1,11 @@
 package io.shellify.app.core.engine
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
 import android.util.Log
+import androidx.annotation.MainThread
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,8 +15,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.mozilla.geckoview.ContentBlocking
-import org.xmlpull.v1.XmlPullParser
-import org.xmlpull.v1.XmlPullParserFactory
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.StorageController
@@ -42,26 +42,21 @@ class GeckoEngineManager(private val context: Context) {
         private const val KEY_VERIFIED = "sha256_verified"
         private const val KEY_SHA256 = "sha256_hash"
 
-        const val GECKO_VERSION = "140.0.20250707120347"
+        const val GECKO_VERSION = "156.0.20260909172920"
         private const val MAVEN_BASE = "https://maven.mozilla.org/maven2/org/mozilla/geckoview"
-
-        private val ABI_ARTIFACT = mapOf(
-            "arm64-v8a" to "geckoview-arm64-v8a",
-            "armeabi-v7a" to "geckoview-armeabi-v7a",
-            "x86_64" to "geckoview-x86_64",
-            "x86" to "geckoview-x86",
-        )
-
-        // SHA-256 of the AAR for each ABI at GECKO_VERSION — fetched from maven.mozilla.org
-        private val KNOWN_SHA256 = mapOf(
-            "arm64-v8a" to "ac09410e56d92310a05df56df4eeafbfbcf82243dc66a214b788e2a1b413fa45",
-            "armeabi-v7a" to "34aefeb7a5400a4cec4475d41ee6f231c50f1cd04dd5c82ea550ffa96fffaebf",
-            "x86_64" to "d294025a1c5c8d293677f8a645ff8a39edff3124c53f301917bc02b69e36f612",
-            "x86" to "eec957f0b8242588a846a60e59a524d1fc25adedcd7b520399bfc9da2dfe1409",
-        )
-
-        // libmozglue must be loaded before libxul (dependency order)
-        private val PRELOAD_ORDER = listOf("libmozglue.so", "liblgpllibs.so", "libxul.so")
+        internal fun hasCurrentInstallation(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(KEY_INSTALLED, false)) return false
+            val installedVersion = prefs.getString(KEY_VERSION, null)
+            if (installedVersion != GECKO_VERSION) return false
+            return hasCurrentGeckoInstallation(
+                installed = true,
+                installedVersion = installedVersion,
+                expectedVersion = GECKO_VERSION,
+                supportedAbis = Build.SUPPORTED_ABIS,
+                filesDir = context.filesDir,
+            )
+        }
 
     }
 
@@ -71,6 +66,7 @@ class GeckoEngineManager(private val context: Context) {
     // which are checked per-connection, so applying them before each session.open() is sufficient
     // without needing a separate runtime per ProxyConfig (T-02-20, WR-02-fix).
     @Volatile private var runtime: GeckoRuntime? = null
+    private val activityResultBridge = GeckoActivityResultBridge()
 
     // Override in tests to supply mock GeckoRuntime instances without calling GeckoRuntime.create().
     internal var runtimeFactory: (ProxyConfig) -> GeckoRuntime = ::buildRuntime
@@ -130,12 +126,7 @@ class GeckoEngineManager(private val context: Context) {
         runtime?.settings?.contentBlocking?.setSafeBrowsing(level)
     }
 
-    fun isInstalled(): Boolean {
-        if (!prefs.getBoolean(KEY_INSTALLED, false)) return false
-        if (prefs.getString(KEY_VERSION, null) != GECKO_VERSION) return false
-        val dir = getLibsDir()
-        return dir.exists() && dir.listFiles()?.any { it.extension == "so" } == true
-    }
+    fun isInstalled(): Boolean = hasCurrentInstallation(context)
 
     fun getInstalledVersion(): String? = prefs.getString(KEY_VERSION, null)
     fun getInstalledSha256(): String? = prefs.getString(KEY_SHA256, null)
@@ -147,7 +138,7 @@ class GeckoEngineManager(private val context: Context) {
         return (bytes / (1024 * 1024)).toInt()
     }
 
-    // ── GeckoRuntime lifecycle ─────────────────────────────────────────────────
+    // GeckoRuntime lifecycle
 
     /**
      * Returns the single [GeckoRuntime] for this process.
@@ -170,9 +161,31 @@ class GeckoEngineManager(private val context: Context) {
         runtime?.let { return it }
         // Slow path: serialize creation so GeckoRuntime.create() is called at most once.
         return synchronized(this) {
-            runtime ?: runtimeFactory(proxyConfig).also { runtime = it }
+            runtime ?: runtimeFactory(proxyConfig).also { created ->
+                created.setActivityDelegate(activityResultBridge)
+                runtime = created
+            }
         }
     }
+
+    @MainThread
+    fun attachActivityHost(token: Any, host: GeckoActivityHost, isEligible: Boolean) {
+        activityResultBridge.attachHost(token, host, isEligible)
+    }
+
+    @MainThread
+    fun setActivityHostEligible(token: Any, isEligible: Boolean) {
+        activityResultBridge.setHostEligible(token, isEligible)
+    }
+
+    @MainThread
+    fun detachActivityHost(token: Any) {
+        activityResultBridge.detachHost(token)
+    }
+
+    @MainThread
+    fun onActivityResult(token: Any, requestCode: Int, resultCode: Int, data: Intent?): Boolean =
+        activityResultBridge.onActivityResult(token, requestCode, resultCode, data)
 
     private fun applyProxySystemProperties(proxyConfig: ProxyConfig) {
         when (proxyConfig) {
@@ -205,16 +218,20 @@ class GeckoEngineManager(private val context: Context) {
         return GeckoRuntime.create(context.applicationContext, settings)
     }
 
+    // Download and install
 
-    // ── Download & install ────────────────────────────────────────────────────
-
-    suspend fun downloadAndInstall(version: String = GECKO_VERSION): Boolean =
+    suspend fun downloadAndInstall(): Boolean =
         withContext(Dispatchers.IO) {
             cancelRequested = false
-            val abi = Build.SUPPORTED_ABIS.firstOrNull()
-                ?.takeIf { it in ABI_ARTIFACT } ?: "arm64-v8a"
-            val artifact = ABI_ARTIFACT[abi]!!
-            val url = "$MAVEN_BASE/$artifact/$version/$artifact-$version.aar"
+            val abi = selectSupportedGeckoAbi(Build.SUPPORTED_ABIS)
+            if (abi == null) {
+                val supported = Build.SUPPORTED_ABIS.joinToString()
+                Log.e(TAG, "No GeckoView artifact supports this device ABI set: $supported")
+                _installState.value = GeckoInstallState.Error("Unsupported device ABI for GeckoView")
+                return@withContext false
+            }
+            val artifact = GECKO_ARTIFACT_BY_ABI.getValue(abi)
+            val url = "$MAVEN_BASE/$artifact/$GECKO_VERSION/$artifact-$GECKO_VERSION.aar"
             Log.i(TAG, "Downloading GeckoView from $url")
 
             try {
@@ -238,51 +255,35 @@ class GeckoEngineManager(private val context: Context) {
                     return@withContext false
                 }
 
-                // ── Integrity verification ────────────────────────────────────────
-                _installState.value = GeckoInstallState.Downloading(0.9f, "Verifying…")
-                val expectedHash = if (version == GECKO_VERSION) {
-                    KNOWN_SHA256[abi]
-                } else {
-                    fetchMavenSha256(artifact, version)
+                // Integrity verification uses the hash pinned to this exact compile-time release.
+                _installState.value = GeckoInstallState.Downloading(0.9f, "Verifying...")
+                val expectedHash = GECKO_SHA256_BY_ABI.getValue(abi)
+                val actualHash = sha256(tempAar)
+                if (actualHash != expectedHash) {
+                    Log.e(TAG, "SHA-256 mismatch! expected=$expectedHash actual=$actualHash")
+                    tempAar.delete()
+                    _installState.value =
+                        GeckoInstallState.Error("Integrity check failed - download may be corrupted or tampered")
+                    return@withContext false
                 }
-                val verified: Boolean
-                if (expectedHash == null) {
-                    Log.w(
-                        TAG,
-                        "No expected hash available for $artifact $version — skipping verification"
-                    )
-                    verified = false
-                } else {
-                    val actualHash = sha256(tempAar)
-                    if (actualHash != expectedHash) {
-                        Log.e(TAG, "SHA-256 mismatch! expected=$expectedHash actual=$actualHash")
-                        tempAar.delete()
-                        _installState.value =
-                            GeckoInstallState.Error("Integrity check failed — download may be corrupted or tampered")
-                        return@withContext false
-                    }
-                    Log.i(TAG, "SHA-256 verified: $actualHash")
-                    verified = true
-                }
-
+                Log.i(TAG, "SHA-256 verified: $actualHash")
                 _installState.value = GeckoInstallState.Installing
-                val extracted = extractSoFiles(tempAar, abi)
+                val installed = extractAndReplaceSoFiles(tempAar, abi)
                 tempAar.delete()
 
-                if (!extracted) {
-                    _installState.value =
-                        GeckoInstallState.Error("Extraction failed — no .so files found in AAR")
+                if (!installed) {
+                    _installState.value = GeckoInstallState.Error("GeckoView native library installation failed")
                     return@withContext false
                 }
 
                 prefs.edit()
                     .putBoolean(KEY_INSTALLED, true)
-                    .putString(KEY_VERSION, version)
-                    .putBoolean(KEY_VERIFIED, verified)
-                    .putString(KEY_SHA256, if (verified) expectedHash else null)
+                    .putString(KEY_VERSION, GECKO_VERSION)
+                    .putBoolean(KEY_VERIFIED, true)
+                    .putString(KEY_SHA256, expectedHash)
                     .apply()
-                _installState.value = GeckoInstallState.Installed(verified = verified)
-                Log.i(TAG, "GeckoView installed successfully (ABI=$abi, verified=$verified)")
+                _installState.value = GeckoInstallState.Installed(verified = true)
+                Log.i(TAG, "GeckoView $GECKO_VERSION installed successfully (ABI=$abi, verified=true)")
                 true
             } catch (e: CancellationException) {
                 _installState.value = GeckoInstallState.NotInstalled
@@ -295,50 +296,15 @@ class GeckoEngineManager(private val context: Context) {
         }
 
     suspend fun checkForUpdate(): String? = withContext(Dispatchers.IO) {
-        try {
-            val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
-            val artifact = ABI_ARTIFACT[abi] ?: ABI_ARTIFACT["arm64-v8a"]!!
-            val metaUrl = "$MAVEN_BASE/$artifact/maven-metadata.xml"
-            val request = Request.Builder().url(metaUrl).header("User-Agent", "Mozilla/5.0").build()
-            val body = httpClient.newCall(request).execute().use { it.body?.string() }
-                ?: return@withContext null
-
-            // Parse <release> or last <version> from maven-metadata.xml.
-            // Prefer the <release> tag; only fall back to <version> if no <release> was found.
-            // Without foundRelease, every subsequent <version> element overwrites latest, which
-            // may point to an older build than <release> when <version> elements follow <release>
-            // in document order (WR-07).
-            val factory = XmlPullParserFactory.newInstance()
-            val xpp = factory.newPullParser().apply { setInput(body.reader()) }
-            var latest: String? = null
-            var inRelease = false
-            var foundRelease = false
-            var eventType = xpp.eventType
-            while (eventType != XmlPullParser.END_DOCUMENT) {
-                if (eventType == XmlPullParser.START_TAG && xpp.name == "release") inRelease = true
-                else if (eventType == XmlPullParser.TEXT && inRelease) {
-                    latest = xpp.text.trim()
-                    inRelease = false
-                    foundRelease = true
-                } else if (!foundRelease && eventType == XmlPullParser.START_TAG && xpp.name == "version") {
-                    xpp.next()
-                    if (xpp.eventType == XmlPullParser.TEXT) latest = xpp.text.trim()
-                }
-                eventType = xpp.next()
-            }
-            Log.i(TAG, "Latest GeckoView version: $latest (installed: ${getInstalledVersion()})")
-            if (latest != null) _latestVersion.value = latest
-            latest
-        } catch (e: Exception) {
-            Log.w(TAG, "Version check failed: ${e.message}")
-            null
+        if (selectSupportedGeckoAbi(Build.SUPPORTED_ABIS) == null) {
+            Log.w(TAG, "Skipping GeckoView update check: unsupported device ABI set")
+            return@withContext null
         }
+        _latestVersion.value = GECKO_VERSION
+        GECKO_VERSION
     }
 
-    suspend fun updateEngine(): Boolean {
-        val target = _latestVersion.value ?: return false
-        return downloadAndInstall(version = target)
-    }
+    suspend fun updateEngine(): Boolean = downloadAndInstall()
 
     fun clearDataForContext(isolationId: String) {
         val rt = runtime ?: return
@@ -365,12 +331,7 @@ class GeckoEngineManager(private val context: Context) {
         Log.i(TAG, "GeckoView uninstalled")
     }
 
-    // ── File helpers ──────────────────────────────────────────────────────────
-
-    private fun getLibsDir(): File {
-        val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
-        return File(context.filesDir, "gecko_engine/lib/$abi").also { it.mkdirs() }
-    }
+    // File helpers
 
     private fun downloadFile(url: String, dest: File, onProgress: (Float) -> Unit): Boolean {
         val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
@@ -410,19 +371,12 @@ class GeckoEngineManager(private val context: Context) {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private fun fetchMavenSha256(artifact: String, version: String): String? {
-        return try {
-            val url = "$MAVEN_BASE/$artifact/$version/$artifact-$version.aar.sha256"
-            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-            httpClient.newCall(request).execute().use { it.body?.string()?.trim() }
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not fetch SHA-256 from Maven: ${e.message}")
-            null
-        }
-    }
+    private fun extractAndReplaceSoFiles(aarFile: File, abi: String): Boolean {
+        val stagingRoot = File(context.cacheDir, "geckoview_lib_staging")
+        if (stagingRoot.exists() && !stagingRoot.deleteRecursively()) return false
+        val stagingAbi = File(stagingRoot, abi)
+        if (!stagingAbi.mkdirs() && !stagingAbi.isDirectory) return false
 
-    private fun extractSoFiles(aarFile: File, abi: String): Boolean {
-        val outDir = getLibsDir()
         val prefix = "jni/$abi/"
         var count = 0
         ZipInputStream(aarFile.inputStream().buffered()).use { zis ->
@@ -430,15 +384,21 @@ class GeckoEngineManager(private val context: Context) {
             while (entry != null) {
                 if (!entry.isDirectory && entry.name.startsWith(prefix) && entry.name.endsWith(".so")) {
                     val name = entry.name.substringAfterLast("/")
-                    FileOutputStream(File(outDir, name)).use { zis.copyTo(it) }
-                    Log.d(TAG, "Extracted $name")
+                    FileOutputStream(File(stagingAbi, name)).use { zis.copyTo(it) }
                     count++
                 }
                 zis.closeEntry()
                 entry = zis.nextEntry
             }
         }
-        Log.i(TAG, "Extracted $count .so files")
-        return count > 0
+        if (count == 0) {
+            stagingRoot.deleteRecursively()
+            return false
+        }
+
+        val liveRoot = File(context.filesDir, "gecko_engine/lib")
+        val replaced = replaceGeckoLibraryDirectory(stagingRoot, liveRoot)
+        Log.i(TAG, "Installed $count GeckoView native libraries for ABI=$abi: $replaced")
+        return replaced
     }
 }

@@ -32,11 +32,13 @@
 ## Third-party SDKs
 
 **GeckoView (Mozilla Firefox engine):**
-- Package: `org.mozilla.geckoview:geckoview-arm64-v8a:128.0.20240704121409`
+- Compile-time API package: `org.mozilla.geckoview:geckoview-arm64-v8a:156.0.20260909172920`
 - Purpose: Full Firefox-based web engine used to render all web content; replaces Android System WebView
 - Module: `:core:engine`
 - Repository: `https://maven.mozilla.org/maven2/`
-- Native libs excluded from packaging: `libxul.so`, `libmozglue.so`, `liblgpllibs.so`
+- Native libs excluded from APK packaging and downloaded at runtime for `arm64-v8a`, `armeabi-v7a`, or `x86_64`
+- Runtime AARs are SHA-256 pinned and must use the exact same GeckoView release as the compiled Java API
+- GeckoRuntime uses a process-wide `ActivityDelegate` to return Android FIDO/WebAuthn activity results
 
 **SQLCipher:**
 - Package: `net.zetetic:android-database-sqlcipher:4.5.4`

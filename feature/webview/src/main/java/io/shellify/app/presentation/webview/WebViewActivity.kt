@@ -1,6 +1,7 @@
 package io.shellify.app.presentation.webview
 
 import android.app.ActivityManager
+import android.app.PendingIntent
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
@@ -69,6 +70,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import io.shellify.app.core.engine.BrowserEngine
 import io.shellify.app.core.engine.BrowserEngineCallback
+import io.shellify.app.core.engine.GeckoActivityHost
+import io.shellify.app.core.engine.GeckoNotificationCallback
 import io.shellify.app.core.engine.GeckoViewEngine
 import io.shellify.app.core.engine.SystemWebViewEngine
 import io.shellify.app.core.isolation.IsolationManager
@@ -151,6 +154,14 @@ class WebViewActivity : FragmentActivity() {
     @VisibleForTesting
     lateinit var swipeRefreshLayout: SwipeRefreshLayout
     private lateinit var isolationManager: IsolationManager
+    private val geckoActivityHostToken = Any()
+    private var isGeckoActivityHostAttached = false
+    private val geckoActivityHost = object : GeckoActivityHost {
+        @Suppress("DEPRECATION")
+        override fun startPendingIntent(pendingIntent: PendingIntent, requestCode: Int) {
+            startIntentSenderForResult(pendingIntent.intentSender, requestCode, null, 0, 0, 0)
+        }
+    }
 
     // Overlay views for OAuth / window.open() popups, newest last. Back press dismisses the topmost.
     private val popupOverlays = ArrayDeque<View>()
@@ -301,6 +312,15 @@ class WebViewActivity : FragmentActivity() {
             pwaApp.engineType == EngineType.GECKOVIEW && app.geckoEngineManager.isInstalled() ->
                 GeckoViewEngine(this, app.geckoEngineManager)
             else -> SystemWebViewEngine(app.adBlocker)
+        }
+
+        if (engine is GeckoViewEngine) {
+            app.geckoEngineManager.attachActivityHost(
+                geckoActivityHostToken,
+                geckoActivityHost,
+                lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
+            )
+            isGeckoActivityHostAttached = true
         }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -878,7 +898,7 @@ class WebViewActivity : FragmentActivity() {
     }
 
     private fun buildCallback(): BrowserEngineCallback =
-        object : BrowserEngineCallback {
+        object : BrowserEngineCallback, GeckoNotificationCallback {
             override fun onPageStarted(url: String?) {
                 viewModel.onPageStarted(url)
             }
@@ -988,6 +1008,20 @@ class WebViewActivity : FragmentActivity() {
 
             override fun onNotificationReceived(title: String, body: String?, iconUrl: String?, tag: String?) {
                 viewModel.onNotificationReceived(title, body, iconUrl, tag)
+            }
+
+            override fun onGeckoNotificationReceived(
+                title: String,
+                body: String?,
+                iconUrl: String?,
+                tag: String,
+                onDisplayed: (Boolean) -> Unit,
+            ) {
+                viewModel.onGeckoNotificationReceived(title, body, iconUrl, tag, onDisplayed)
+            }
+
+            override fun onGeckoNotificationClosed(tag: String) {
+                viewModel.onGeckoNotificationClosed(tag)
             }
 
             override fun onNotificationPermissionRequested(onResult: (Boolean) -> Unit) {
@@ -1153,6 +1187,13 @@ class WebViewActivity : FragmentActivity() {
         setTaskDescription(ActivityManager.TaskDescription(app.name, icon, opaqueColor))
     }
 
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        (application as? WebViewServiceProvider)?.geckoEngineManager
+            ?.onActivityResult(geckoActivityHostToken, requestCode, resultCode, data)
+    }
+
     override fun onStart() {
         super.onStart()
         val appId = intent.getLongExtra(EXTRA_APP_ID, -1L)
@@ -1197,8 +1238,20 @@ class WebViewActivity : FragmentActivity() {
         }
     }
 
+    override fun onPause() {
+        if (isGeckoActivityHostAttached) {
+            (application as WebViewServiceProvider).geckoEngineManager
+                .setActivityHostEligible(geckoActivityHostToken, false)
+        }
+        super.onPause()
+    }
+
     override fun onResume() {
         super.onResume()
+        if (isGeckoActivityHostAttached) {
+            (application as WebViewServiceProvider).geckoEngineManager
+                .setActivityHostEligible(geckoActivityHostToken, true)
+        }
         // viewModel is initialized asynchronously for appId launches — guard until ready.
         if (::viewModel.isInitialized) {
             viewModel.uiState.value.app?.let { applyTaskDescription(it, effectiveThemeColorHex) }
@@ -1206,6 +1259,10 @@ class WebViewActivity : FragmentActivity() {
     }
 
     override fun onDestroy() {
+        if (isGeckoActivityHostAttached) {
+            (application as WebViewServiceProvider).geckoEngineManager.detachActivityHost(geckoActivityHostToken)
+            isGeckoActivityHostAttached = false
+        }
         // viewModel/engine may not be initialized if the Activity was destroyed before the
         // async DB lookup (appId path) completed.
         if (::viewModel.isInitialized) {

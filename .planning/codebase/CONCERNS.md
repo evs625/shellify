@@ -70,18 +70,16 @@ No other `TODO`, `FIXME`, or `HACK` markers exist in the Kotlin source. The code
 
 ## Risky Dependencies
 
-### GeckoView Pinned to a 2024-07-04 Snapshot (10+ Months Old)
-- Version: `128.0.20240704121409` (July 2024)
-- Files: `gradle/libs.versions.toml:25`, `core/engine/src/main/java/io/shellify/app/core/engine/GeckoEngineManager.kt:45`
-- Risk: GeckoView 128 is well past its security-maintenance window. Mozilla releases security patches roughly every 4 weeks. Running a July 2024 build in mid-2026 means ~22 unpatched browser-engine releases, each potentially carrying CVE fixes for renderer-level vulnerabilities (memory corruption, CSP bypass, etc.).
-- Impact: Critical for a privacy-focused app that acts as a browser engine. Users with Gecko mode enabled are exposed to known browser-engine CVEs.
-- Fix: Update to the latest stable GeckoView release. The runtime download path in `GeckoEngineManager.downloadAndInstall()` already supports version parameters — update `GECKO_VERSION` and `KNOWN_SHA256` entries.
+### ~~GeckoView Pinned to a 2024 Snapshot~~ ? RESOLVED (2026-09-16)
+- GeckoView is pinned to `156.0.20260909172920` in both the compile-time API dependency and runtime installer.
+- Runtime AAR hashes are pinned for Mozilla's published `arm64-v8a`, `armeabi-v7a`, and `x86_64` artifacts.
+- Unsupported 32-bit `x86` fails closed instead of substituting another architecture.
+- Native upgrades replace the complete library tree, and startup refuses a recorded engine version that does not match the compiled API.
 
-### GeckoView Gradle Dependency is arm64-v8a Only
-- Dependency: `geckoview-arm64-v8a` (the only ABI declared in `libs.versions.toml`)
-- Files: `gradle/libs.versions.toml:67`, `core/engine/build.gradle.kts:23`
-- Risk: The in-process `GeckoRuntime` initialization path (`GeckoEngineManager.buildRuntime()`) will fail silently or crash on `armeabi-v7a` or `x86_64` devices because the native libs for those ABIs are not bundled in the APK. The runtime download path handles multi-ABI, but only if the download succeeds — first-run experience on non-arm64 hardware is broken.
-- Fix: Either declare all four ABI Gradle dependencies, use ABI splits/App Bundles, or clearly guard the GeckoView engine option behind an arm64 runtime check.
+### ~~GeckoView Gradle Dependency is arm64-v8a Only~~ ? RESOLVED (2026-09-16)
+- The Gradle artifact remains `geckoview-arm64-v8a` only as the compile-time Java/API carrier; Gecko native libraries are excluded from APK packaging.
+- `GeckoEngineManager` downloads and verifies the exact matching native AAR for the device's first Mozilla-supported ABI (`arm64-v8a`, `armeabi-v7a`, or `x86_64`).
+- `GeckoNativeLoader` loads only a current-version, matching-ABI runtime installation.
 
 ### Biometric Library at 1.1.0 (Latest is 1.2.x)
 - Version: `androidx.biometric:biometric:1.1.0`

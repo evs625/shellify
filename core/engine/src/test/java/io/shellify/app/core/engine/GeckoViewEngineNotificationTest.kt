@@ -1,39 +1,68 @@
 package io.shellify.app.core.engine
 
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GeckoViewEngineNotificationTest {
 
-    @Test
-    fun `dispatchNotification with title invokes callback`() {
-        val cb = mockk<BrowserEngineCallback>(relaxed = true)
-        val payload = NotificationPayload(title = "Hi", body = "Body", iconUrl = "icon", tag = "t1")
-
-        dispatchNotification(payload, cb)
-
-        verify(exactly = 1) { cb.onNotificationReceived("Hi", "Body", "icon", "t1") }
+    private fun callbackPair(): Pair<BrowserEngineCallback, GeckoNotificationCallback> {
+        val browser = mockk<BrowserEngineCallback>(relaxed = true)
+        val gecko = mockk<GeckoNotificationCallback>(relaxed = true)
+        val combined = object : BrowserEngineCallback by browser, GeckoNotificationCallback by gecko {}
+        return combined to gecko
     }
 
     @Test
-    fun `dispatchNotification with null title does not invoke callback`() {
-        val cb = mockk<BrowserEngineCallback>(relaxed = true)
-        val payload = NotificationPayload(title = null, body = "Body", iconUrl = "icon", tag = "t1")
+    fun `dispatch uses public Gecko tag and forwards display result`() {
+        val (callback, gecko) = callbackPair()
+        var displayed = false
+        every {
+            gecko.onGeckoNotificationReceived("Hi", "Body", "icon", "gecko-tag", any())
+        } answers {
+            lastArg<(Boolean) -> Unit>().invoke(true)
+        }
 
-        dispatchNotification(payload, cb)
+        dispatchGeckoNotification(
+            NotificationPayload("Hi", "Body", "icon", "gecko-tag"),
+            callback,
+        ) { displayed = it }
 
-        verify(exactly = 0) { cb.onNotificationReceived(any(), any(), any(), any()) }
+        assertTrue(displayed)
+        verify(exactly = 1) {
+            gecko.onGeckoNotificationReceived("Hi", "Body", "icon", "gecko-tag", any())
+        }
     }
 
     @Test
-    fun `dispatchNotification with null body and icon passes nulls`() {
-        val cb = mockk<BrowserEngineCallback>(relaxed = true)
-        // tag is @NonNull in GeckoView 140 WebNotification; empty string signals absent tag.
-        val payload = NotificationPayload(title = "OK", body = null, iconUrl = null, tag = "")
+    fun `missing title fails display without invoking host`() {
+        val (callback, gecko) = callbackPair()
+        var displayed = true
 
-        dispatchNotification(payload, cb)
+        dispatchGeckoNotification(
+            NotificationPayload(null, "Body", "icon", "gecko-tag"),
+            callback,
+        ) { displayed = it }
 
-        verify(exactly = 1) { cb.onNotificationReceived("OK", null, null, "") }
+        assertFalse(displayed)
+        verify(exactly = 0) {
+            gecko.onGeckoNotificationReceived(any(), any(), any(), any(), any())
+        }
+    }
+
+    @Test
+    fun `host without Gecko notification contract fails closed`() {
+        val callback = mockk<BrowserEngineCallback>(relaxed = true)
+        var displayed = true
+
+        dispatchGeckoNotification(
+            NotificationPayload("Hi", null, null, "gecko-tag"),
+            callback,
+        ) { displayed = it }
+
+        assertFalse(displayed)
     }
 }
