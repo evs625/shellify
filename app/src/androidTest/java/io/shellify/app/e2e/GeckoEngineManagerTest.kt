@@ -96,17 +96,17 @@ class GeckoEngineManagerTest {
         assertFalse(GeckoEngineManager(context).isInstalled())
     }
 
-    // Regression: stale 128.x libraries must not be treated as a valid install on devices that
-    // require 16 KB page alignment (Android 15+), where loading a 4 KB-aligned .so would crash.
+    // Regression: a stale GeckoView 140 installation must never be treated as loadable by the
+    // GeckoView 156 Java/API layer after an app upgrade.
     @Test
     fun isInstalled_returnsFalse_whenVersionMismatch() {
-        fakeInstall("128.0.20240704121409")
+        fakeInstall("140.0.20250707120347")
         assertFalse(GeckoEngineManager(context).isInstalled())
     }
 
     @Test
     fun installState_isNotInstalled_whenVersionMismatch() {
-        fakeInstall("128.0.20240704121409")
+        fakeInstall("140.0.20250707120347")
         assertTrue(GeckoEngineManager(context).installState.value is GeckoInstallState.NotInstalled)
     }
 

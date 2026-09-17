@@ -142,9 +142,30 @@ sequenceDiagram
 ## Configuration
 
 - **Manifest registration**: `WebViewActivity` must be declared in `:app/AndroidManifest.xml` with `android:exported="false"` (launched only by internal intents) and `android:launchMode="singleTask"` to prevent multiple instances of the same PWA.
-- **GeckoView runtime**: initialized lazily by `GeckoEngineManager` in `ShellifyApplication.onCreate()`. If GeckoView is not bundled, `geckoEngineManager.isAvailable()` returns `false` and the activity falls back to system WebView automatically.
+- **GeckoView runtime**: created lazily by `GeckoEngineManager` only when GeckoView is installed. `isInstalled()` requires the exact current engine version and a matching supported ABI library tree; otherwise non-Tor apps fall back to System WebView and Tor apps fail closed.
 - **Fullscreen handling**: uses `WindowInsetsControllerCompat` (Jetpack) for API-agnostic status/nav bar hiding. The window flag `FLAG_KEEP_SCREEN_ON` is set when fullscreen is active.
 - **Ad-block lists**: filter lists are loaded from `core:engine`'s bundled assets on first engine start. No network fetch at browse time.
+
+## GeckoView Android activity-result bridge
+
+`WebViewActivity` registers itself with the process-wide `GeckoRuntime.ActivityDelegate` bridge whenever it is using `GeckoViewEngine`.
+
+- Registration happens before `engine.createView()` can create the GeckoRuntime.
+- `onResume()` makes that foreground document eligible for new Gecko/FIDO launches and refreshes its priority.
+- `onPause()` removes eligibility for new launches but preserves ownership of an already-launched result; this is required because opening Android Credential Manager/FIDO can pause the activity temporarily.
+- `onActivityResult()` routes only the exact request code owned by that activity token.
+- `onDestroy()` detaches the host and fails any result that can no longer be delivered.
+- With multiple document activities, the most recently eligible host receives new requests, while older in-flight requests remain owned by their launcher.
+
+This is the embedding hook GeckoView uses when WebAuthn needs an Android `PendingIntent` / FIDO activity. It is independent from Google OAuth popup handling.
+
+## GeckoView notification acknowledgement
+
+Gecko notifications use the public `WebNotification.tag` as their Gecko identity. `WebViewViewModel` begins the mapping synchronously, then `PwaNotificationDispatcher` applies the existing Shellify notification gates and posts to Android.
+
+The Gecko callback is completed only after the Android outcome is known: a successful current post yields `WebNotification.show()`; denied/disabled/failed/closed/superseded work yields `dismiss()`. Gecko close events synchronously cancel the Android notification mapped to that public ID. A local generation is only a race guard for asynchronous work and never replaces the Gecko ID.
+
+Concurrent first-time notification permission requests share one dialog decision and all waiting Gecko callbacks are completed.
 
 ## Phase 2 Privacy Additions
 

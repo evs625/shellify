@@ -93,9 +93,21 @@ android {
             excludes += "/META-INF/LICENSE-notice.md"
         }
         jniLibs {
-            excludes += "**/libxul.so"
-            excludes += "**/libmozglue.so"
+            // GeckoView natives are installed at runtime for the device ABI. Keep the
+            // compile-time arm64 artifact from contributing any Gecko native library.
+            excludes += "**/libclearkey.so"
+            excludes += "**/libcrashhelper.so"
+            excludes += "**/libcrashtools.so"
+            excludes += "**/libfreebl3.so"
+            excludes += "**/libgkcodecs.so"
             excludes += "**/liblgpllibs.so"
+            excludes += "**/libmozavcodec.so"
+            excludes += "**/libmozavutil.so"
+            excludes += "**/libmozglue.so"
+            excludes += "**/libnss3.so"
+            excludes += "**/libplugin-container.so"
+            excludes += "**/libsoftokn3.so"
+            excludes += "**/libxul.so"
         }
     }
 }

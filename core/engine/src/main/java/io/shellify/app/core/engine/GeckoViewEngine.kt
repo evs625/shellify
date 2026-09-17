@@ -15,35 +15,34 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.StorageController
-import org.mozilla.geckoview.WebNotification
-import org.mozilla.geckoview.WebNotificationDelegate
 import org.mozilla.geckoview.WebRequestError
 import org.mozilla.geckoview.WebResponse
 
-// Thin, test-injectable data holder so unit tests can exercise fan-out without a real WebNotification.
+// Testable projection of GeckoView's public WebNotification fields.
 internal data class NotificationPayload(
     val title: String?,
     val body: String?,
     val iconUrl: String?,
-    val tag: String?,
+    val tag: String,
 )
 
-// Extracted so unit tests can exercise notification fan-out without a real GeckoSession or GeckoRuntime.
-internal fun dispatchNotification(payload: NotificationPayload, cb: BrowserEngineCallback) {
-    val title = payload.title ?: return
-    cb.onNotificationReceived(title, payload.body, payload.iconUrl, payload.tag)
-}
-
-// Bridge from the GeckoView 140 WebNotification type to the testable payload.
-internal fun dispatchNotification(notification: WebNotification, cb: BrowserEngineCallback) {
-    dispatchNotification(
-        NotificationPayload(
-            title = notification.title,
-            body = notification.text,
-            iconUrl = notification.imageUrl,
-            tag = notification.tag,
-        ),
-        cb,
+internal fun dispatchGeckoNotification(
+    payload: NotificationPayload,
+    cb: BrowserEngineCallback,
+    onDisplayed: (Boolean) -> Unit,
+) {
+    val title = payload.title
+    val notificationCallback = cb as? GeckoNotificationCallback
+    if (title == null || notificationCallback == null) {
+        onDisplayed(false)
+        return
+    }
+    notificationCallback.onGeckoNotificationReceived(
+        title = title,
+        body = payload.body,
+        iconUrl = payload.iconUrl,
+        tag = payload.tag,
+        onDisplayed = onDisplayed,
     )
 }
 
@@ -101,12 +100,7 @@ class GeckoViewEngine(
     fun reattachNotificationDelegate() {
         val cb = callback ?: return
         val proxyConfig = lastApp?.let { proxyConfigFor(it) } ?: ProxyConfig.None
-        engineManager.getRuntime(proxyConfig).setWebNotificationDelegate(object : WebNotificationDelegate {
-            override fun onShowNotification(notification: WebNotification) {
-                dispatchNotification(notification, cb)
-            }
-            override fun onCloseNotification(notification: WebNotification) = Unit
-        })
+        engineManager.getRuntime(proxyConfig).setWebNotificationDelegate(createGeckoWebNotificationDelegate(cb))
     }
 
     override fun createView(context: Context, app: WebApp, callback: BrowserEngineCallback): View {
@@ -129,18 +123,9 @@ class GeckoViewEngine(
         val session = buildSession(uaMode, uaOverride, callback)
         this.session = session
 
-        // WebNotificationDelegate is runtime-scoped (GeckoView 140 API) — one delegate for all sessions.
-        // Overwrite on each createView so the active callback is always current.
-        // Request a proxy-aware runtime: Tor apps get Socks5("127.0.0.1", 9050); others use ProxyConfig.None.
-        engineManager.getRuntime(proxyConfigFor(app)).setWebNotificationDelegate(object : WebNotificationDelegate {
-            override fun onShowNotification(notification: WebNotification) {
-                dispatchNotification(notification, callback)
-            }
-
-            override fun onCloseNotification(notification: WebNotification) {
-                // No-op: notification lifecycle management is the caller's concern (Plan 05).
-            }
-        })
+        // WebNotificationDelegate is runtime-scoped. Rebind it to the active Shellify host.
+        engineManager.getRuntime(proxyConfigFor(app))
+            .setWebNotificationDelegate(createGeckoWebNotificationDelegate(callback))
 
         val view = GeckoView(context)
         view.setSession(session)
@@ -191,8 +176,8 @@ class GeckoViewEngine(
             }
         }
 
-        // ScrollDelegate is the correct GeckoView 140 API for tracking scroll position.
-        // ContentDelegate.onScrollChanged does not exist in this API level.
+        // GeckoView reports scroll position through ScrollDelegate; ContentDelegate has no
+        // corresponding onScrollChanged callback.
         s.setScrollDelegate(object : GeckoSession.ScrollDelegate {
             override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
                 geckoScrollY = scrollY

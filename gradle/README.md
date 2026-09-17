@@ -25,7 +25,7 @@ Key versions declared in `libs.versions.toml`:
 | SQLCipher | 4.5.4 |
 | OkHttp | 4.12.0 |
 | Coil | 2.7.0 |
-| GeckoView | 128.0.20240704121409 |
+| GeckoView | 156.0.20260909172920 |
 | ZXing | 3.5.3 |
 | WorkManager | 2.9.1 |
 | Detekt | 1.23.7 |

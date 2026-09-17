@@ -1,6 +1,8 @@
 package io.shellify.app.presentation.webview
 
+import android.app.Notification
 import android.app.NotificationChannel
+import android.app.NotificationChannelGroup
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -61,6 +63,25 @@ class PwaNotificationDispatcher(
         get() = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
 
+    internal class GeckoNotificationHandle internal constructor(
+        val appId: Long,
+        val tag: String,
+        val generation: Long,
+    )
+
+    private data class GeckoNotificationKey(val appId: Long, val tag: String)
+
+    private sealed interface GeckoNotificationState {
+        val generation: Long
+        data class Pending(override val generation: Long, val reuseNotificationId: Int?) : GeckoNotificationState
+        data class Active(override val generation: Long, val notificationId: Int) : GeckoNotificationState
+        data class Closed(override val generation: Long) : GeckoNotificationState
+    }
+
+    private val geckoNotificationLock = Any()
+    private val geckoNotificationStates = mutableMapOf<GeckoNotificationKey, GeckoNotificationState>()
+    private var nextGeckoGeneration = 0L
+
     sealed interface DispatchResult {
         data class Posted(val notificationId: Int) : DispatchResult
         sealed interface Dropped : DispatchResult {
@@ -70,6 +91,10 @@ class PwaNotificationDispatcher(
             data object DndActive : Dropped
             data object RateLimited : Dropped
             data object OsPermissionMissing : Dropped
+            data object ChannelDisabled : Dropped
+            data object ClosedBeforePost : Dropped
+            data object Superseded : Dropped
+            data object PostFailed : Dropped
         }
     }
 
@@ -99,64 +124,114 @@ class PwaNotificationDispatcher(
         return BitmapFactory.decodeFile(path, opts)
     }
 
+    internal fun beginGeckoNotification(app: WebApp, tag: String): GeckoNotificationHandle =
+        synchronized(geckoNotificationLock) {
+            val key = GeckoNotificationKey(app.id, tag)
+            val reusableId = (geckoNotificationStates[key] as? GeckoNotificationState.Active)?.notificationId
+            val generation = ++nextGeckoGeneration
+            geckoNotificationStates[key] = GeckoNotificationState.Pending(generation, reusableId)
+            GeckoNotificationHandle(app.id, tag, generation)
+        }
+
+    internal fun closeGeckoNotification(app: WebApp, tag: String) {
+        val key = GeckoNotificationKey(app.id, tag)
+        val manager = notificationManagerProvider(context)
+        synchronized(geckoNotificationLock) {
+            when (val state = geckoNotificationStates[key]) {
+                is GeckoNotificationState.Active -> {
+                    runCatching { manager.cancel(state.notificationId) }
+                    geckoNotificationStates.remove(key)
+                }
+                is GeckoNotificationState.Pending -> {
+                    geckoNotificationStates[key] = GeckoNotificationState.Closed(state.generation)
+                }
+                is GeckoNotificationState.Closed, null -> Unit
+            }
+        }
+    }
+
+    internal fun finishGeckoNotification(handle: GeckoNotificationHandle) {
+        val key = GeckoNotificationKey(handle.appId, handle.tag)
+        synchronized(geckoNotificationLock) {
+            val state = geckoNotificationStates[key] ?: return@synchronized
+            if (state.generation == handle.generation && state !is GeckoNotificationState.Active) {
+                geckoNotificationStates.remove(key)
+            }
+        }
+    }
+
     suspend fun dispatch(
         app: WebApp,
         title: String,
         body: String?,
         iconUrl: String?,
         tag: String?,
-    ): DispatchResult {
-        // Gate 0: global notifications disabled
-        if (!isGlobalNotificationsEnabled()) {
-            Log.d(TAG, "Dropped: global notifications disabled")
-            return DispatchResult.Dropped.GloballyDisabled
-        }
+    ): DispatchResult = dispatchInternal(app, title, body, iconUrl, tag, geckoHandle = null)
 
-        // Gate 1: permission denied
+    internal suspend fun dispatchGecko(
+        handle: GeckoNotificationHandle,
+        app: WebApp,
+        title: String,
+        body: String?,
+        iconUrl: String?,
+    ): DispatchResult = dispatchInternal(app, title, body, iconUrl, handle.tag, handle)
+
+    private suspend fun dispatchInternal(
+        app: WebApp,
+        title: String,
+        body: String?,
+        iconUrl: String?,
+        tag: String?,
+        geckoHandle: GeckoNotificationHandle?,
+    ): DispatchResult {
+        dropReason(app)?.let { return it }
+        val target = prepareChannel(app)
+        if (geckoHandle != null && !target.isEnabled) return DispatchResult.Dropped.ChannelDisabled
+        val safeTitle = title.take(MAX_TITLE_LEN)
+        val safeBody = (body ?: "").take(MAX_BODY_LEN)
+        val notification = buildNotification(app, target.channelId, safeTitle, safeBody)
+        val result = postNotification(target.manager, app, notification, geckoHandle)
+        if (result is DispatchResult.Posted) {
+            if (geckoHandle == null) {
+                saveHistory(app, safeTitle, safeBody, iconUrl)
+            } else {
+                saveGeckoHistory(app, safeTitle, safeBody, iconUrl, geckoHandle.tag)
+            }
+        }
+        return if (result is DispatchResult.Posted && geckoHandle != null) {
+            confirmGeckoPostStillActive(geckoHandle, result)
+        } else {
+            result
+        }
+    }
+
+    private suspend fun dropReason(app: WebApp): DispatchResult.Dropped? {
+        if (!isGlobalNotificationsEnabled()) return DispatchResult.Dropped.GloballyDisabled
         if (app.notificationPermission == NotificationPermission.DENIED) {
-            Log.d(TAG, "Dropped: permission denied for app ${app.id}")
             return DispatchResult.Dropped.PermissionDenied
         }
-
-        // Gate 2: permission not asked yet — suppress silently
         if (app.notificationPermission == NotificationPermission.NOT_ASKED) {
-            Log.d(TAG, "Dropped: permission not asked for app ${app.id}")
             return DispatchResult.Dropped.NotAsked
         }
+        if (isDndActive(app.dndStartHour, app.dndEndHour)) return DispatchResult.Dropped.DndActive
+        if (countToday(app.id) >= RATE_LIMIT_PER_DAY) return DispatchResult.Dropped.RateLimited
+        if (!checkPostPermission(context)) return DispatchResult.Dropped.OsPermissionMissing
+        return null
+    }
 
-        // Gate 3: DND active
-        if (isDndActive(app.dndStartHour, app.dndEndHour)) {
-            Log.d(TAG, "Dropped: DND active for app ${app.id}")
-            return DispatchResult.Dropped.DndActive
-        }
+    private data class ChannelTarget(
+        val manager: NotificationManagerCompat,
+        val channelId: String,
+        val isEnabled: Boolean,
+    )
 
-        // Gate 4: rate limit
-        val todayCount = countToday(app.id)
-        if (todayCount >= RATE_LIMIT_PER_DAY) {
-            Log.d(TAG, "Dropped: rate limit reached ($todayCount) for app ${app.id}")
-            return DispatchResult.Dropped.RateLimited
-        }
-
-        // Gate 5: OS-level POST_NOTIFICATIONS permission
-        if (!checkPostPermission(context)) {
-            Log.d(TAG, "Dropped: OS POST_NOTIFICATIONS permission missing for app ${app.id}")
-            return DispatchResult.Dropped.OsPermissionMissing
-        }
-
+    private suspend fun prepareChannel(app: WebApp): ChannelTarget {
         val category = app.categoryId?.let { getCategoryById?.invoke(it) }
         val groupId = if (category != null) "$GROUP_PREFIX${category.id}" else GROUP_ID_DEFAULT
-        val groupName = if (category != null) category.name
-            else context.getString(R.string.notification_channel_name_default)
-        // Channel is per-app so each app appears as an individual item inside its category group.
+        val groupName = category?.name ?: context.getString(R.string.notification_channel_name_default)
         val channelId = NotificationChannelId.forApp(app.isolationId)
         val manager = notificationManagerProvider(context)
-
-        // Create channel group (idempotent). Groups are the category headers; channels are apps.
-        manager.createNotificationChannelGroup(
-            android.app.NotificationChannelGroup(groupId, groupName)
-        )
-
-        // Create per-app channel inside the category group (idempotent — platform deduplicates).
+        manager.createNotificationChannelGroup(NotificationChannelGroup(groupId, groupName))
         val channel = NotificationChannel(
             channelId,
             channelNameProvider(app.name),
@@ -166,15 +241,18 @@ class PwaNotificationDispatcher(
             group = groupId
         }
         manager.createNotificationChannel(channel)
+        val isEnabled = manager.getNotificationChannel(channelId)?.importance != NotificationManager.IMPORTANCE_NONE
+        return ChannelTarget(manager, channelId, isEnabled)
+    }
 
-        val safeTitle = title.take(MAX_TITLE_LEN)
-        val safeBody = (body ?: "").take(MAX_BODY_LEN)
-
-        val appIcon: Bitmap? = app.iconPath?.let { path ->
-            runCatching { loadScaledBitmap(path) }.getOrNull()
-        }
-
-        val notification = NotificationCompat.Builder(context, channelId)
+    private fun buildNotification(
+        app: WebApp,
+        channelId: String,
+        safeTitle: String,
+        safeBody: String,
+    ): Notification {
+        val appIcon = app.iconPath?.let { path -> runCatching { loadScaledBitmap(path) }.getOrNull() }
+        return NotificationCompat.Builder(context, channelId)
             .setSmallIcon(smallIcon)
             .setColor(if (isNightMode) Color.WHITE else Color.BLACK)
             .apply { appIcon?.let { setLargeIcon(it) } }
@@ -183,23 +261,116 @@ class PwaNotificationDispatcher(
             .setContentIntent(tapIntentProvider(app.id))
             .setAutoCancel(true)
             .build()
-
-        @Suppress("MagicNumber")
-        val notificationId = (app.id.toInt() shl 16) or (System.currentTimeMillis().toInt() and 0xFFFF)
-        @Suppress("MissingPermission") // POST_NOTIFICATIONS declared in app manifest; gated by checkPostPermission above
-        manager.notify(notificationId, notification)
-
-        saveNotification(
-            PwaNotification(
-                appId = app.id,
-                title = safeTitle,
-                body = safeBody.ifEmpty { null },
-                iconUrl = iconUrl?.take(MAX_ICON_LEN),
-                timestamp = System.currentTimeMillis(),
-                isRead = false,
-            )
-        )
-
-        return DispatchResult.Posted(notificationId)
     }
+
+    private fun postNotification(
+        manager: NotificationManagerCompat,
+        app: WebApp,
+        notification: Notification,
+        handle: GeckoNotificationHandle?,
+    ): DispatchResult {
+        if (handle == null) {
+            val notificationId = newNotificationId(app.id)
+            notifyAndroidUnchecked(manager, notificationId, notification)
+            return DispatchResult.Posted(notificationId)
+        }
+        return postGeckoNotification(manager, app, notification, handle)
+    }
+
+    private fun postGeckoNotification(
+        manager: NotificationManagerCompat,
+        app: WebApp,
+        notification: Notification,
+        handle: GeckoNotificationHandle,
+    ): DispatchResult = synchronized(geckoNotificationLock) {
+        val key = GeckoNotificationKey(handle.appId, handle.tag)
+        val state = geckoNotificationStates[key]
+        if (state == null || state.generation != handle.generation) {
+            return@synchronized DispatchResult.Dropped.Superseded
+        }
+        if (state is GeckoNotificationState.Closed) {
+            geckoNotificationStates.remove(key)
+            return@synchronized DispatchResult.Dropped.ClosedBeforePost
+        }
+        val notificationId = when (state) {
+            is GeckoNotificationState.Pending -> state.reuseNotificationId ?: newNotificationId(app.id)
+            is GeckoNotificationState.Active -> state.notificationId
+            is GeckoNotificationState.Closed -> error("handled above")
+        }
+        if (!notifyAndroid(manager, notificationId, notification)) {
+            geckoNotificationStates.remove(key)
+            return@synchronized DispatchResult.Dropped.PostFailed
+        }
+        geckoNotificationStates[key] = GeckoNotificationState.Active(handle.generation, notificationId)
+        DispatchResult.Posted(notificationId)
+    }
+
+    @Suppress("MissingPermission")
+    private fun notifyAndroid(manager: NotificationManagerCompat, notificationId: Int, notification: Notification): Boolean =
+        runCatching { manager.notify(notificationId, notification) }
+            .onFailure { Log.w(TAG, "Android notification post failed", it) }
+            .isSuccess
+
+    @Suppress("MagicNumber")
+    private fun newNotificationId(appId: Long): Int =
+        (appId.toInt() shl 16) or (System.currentTimeMillis().toInt() and 0xFFFF)
+
+    private fun confirmGeckoPostStillActive(
+        handle: GeckoNotificationHandle,
+        posted: DispatchResult.Posted,
+    ): DispatchResult = synchronized(geckoNotificationLock) {
+        val state = geckoNotificationStates[GeckoNotificationKey(handle.appId, handle.tag)]
+        if (state is GeckoNotificationState.Active &&
+            state.generation == handle.generation &&
+            state.notificationId == posted.notificationId
+        ) {
+            posted
+        } else {
+            DispatchResult.Dropped.Superseded
+        }
+    }
+
+    private suspend fun saveHistory(
+        app: WebApp,
+        safeTitle: String,
+        safeBody: String,
+        iconUrl: String?,
+    ) {
+        saveNotification(historyEntry(app, safeTitle, safeBody, iconUrl))
+    }
+
+    private suspend fun saveGeckoHistory(
+        app: WebApp,
+        safeTitle: String,
+        safeBody: String,
+        iconUrl: String?,
+        tag: String,
+    ) {
+        runCatching { saveNotification(historyEntry(app, safeTitle, safeBody, iconUrl)) }
+            .onFailure { Log.w(TAG, "Notification history save failed for Gecko tag=$tag", it) }
+    }
+
+    private fun historyEntry(
+        app: WebApp,
+        safeTitle: String,
+        safeBody: String,
+        iconUrl: String?,
+    ): PwaNotification = PwaNotification(
+        appId = app.id,
+        title = safeTitle,
+        body = safeBody.ifEmpty { null },
+        iconUrl = iconUrl?.take(MAX_ICON_LEN),
+        timestamp = System.currentTimeMillis(),
+        isRead = false,
+    )
+
+    @Suppress("MissingPermission")
+    private fun notifyAndroidUnchecked(
+        manager: NotificationManagerCompat,
+        notificationId: Int,
+        notification: Notification,
+    ) {
+        manager.notify(notificationId, notification)
+    }
+
 }

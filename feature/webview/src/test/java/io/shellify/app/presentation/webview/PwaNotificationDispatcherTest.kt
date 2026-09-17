@@ -1,5 +1,7 @@
 package io.shellify.app.presentation.webview
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import androidx.core.app.NotificationManagerCompat
 import io.mockk.coEvery
@@ -14,6 +16,8 @@ import io.shellify.app.domain.usecase.CountNotificationsTodayUseCase
 import io.shellify.app.domain.usecase.IsDndActiveUseCase
 import io.shellify.app.domain.usecase.SaveNotificationUseCase
 import io.shellify.app.presentation.webview.PwaNotificationDispatcher.DispatchResult
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -68,6 +72,7 @@ class PwaNotificationDispatcherTest {
     @Before
     fun setUp() {
         context = RuntimeEnvironment.getApplication()
+        every { mockManager.getNotificationChannel(any()) } returns null
     }
 
     @Test
@@ -237,4 +242,111 @@ class PwaNotificationDispatcherTest {
         coVerify(exactly = 0) { mockManager.notify(any(), any()) }
         coVerify(exactly = 0) { saveNotification(any()) }
     }
+    @Test
+    fun `disabled app channel reports Gecko notification not posted`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        every { mockManager.getNotificationChannel(any()) } returns
+            NotificationChannel("disabled", "Disabled", NotificationManager.IMPORTANCE_NONE)
+        val dispatcher = buildDispatcher()
+        val handle = dispatcher.beginGeckoNotification(app, "disabled-tag")
+
+        val result = dispatcher.dispatchGecko(handle, app, "Title", "Body", null)
+
+        assertTrue(result is DispatchResult.Dropped.ChannelDisabled)
+        coVerify(exactly = 0) { mockManager.notify(any(), any()) }
+    }
+
+    @Test
+    fun `Gecko close before post suppresses notification`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        val dispatcher = buildDispatcher()
+        val handle = dispatcher.beginGeckoNotification(app, "gecko-tag")
+        dispatcher.closeGeckoNotification(app, "gecko-tag")
+
+        val result = dispatcher.dispatchGecko(handle, app, "Title", "Body", null)
+
+        assertTrue(result is DispatchResult.Dropped.ClosedBeforePost)
+        coVerify(exactly = 0) { mockManager.notify(any(), any()) }
+    }
+
+    @Test
+    fun `Gecko tag replacement reuses Android notification id`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        coEvery { saveNotification(any()) } returns 1L
+        val dispatcher = buildDispatcher()
+        val ids = mutableListOf<Int>()
+        every { mockManager.notify(capture(ids), any()) } returns Unit
+
+        val first = dispatcher.beginGeckoNotification(app, "same-tag")
+        val firstResult = dispatcher.dispatchGecko(first, app, "One", null, null)
+        val second = dispatcher.beginGeckoNotification(app, "same-tag")
+        val secondResult = dispatcher.dispatchGecko(second, app, "Two", null, null)
+
+        assertTrue(firstResult is DispatchResult.Posted)
+        assertTrue(secondResult is DispatchResult.Posted)
+        assertEquals(2, ids.size)
+        assertEquals(ids[0], ids[1])
+    }
+
+    @Test
+    fun `closing active Gecko notification cancels mapped Android id`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        coEvery { saveNotification(any()) } returns 1L
+        val dispatcher = buildDispatcher()
+        val handle = dispatcher.beginGeckoNotification(app, "close-me")
+        val result = dispatcher.dispatchGecko(handle, app, "Title", null, null)
+        val notificationId = (result as DispatchResult.Posted).notificationId
+
+        dispatcher.closeGeckoNotification(app, "close-me")
+
+        coVerify(exactly = 1) { mockManager.cancel(notificationId) }
+    }
+
+    @Test
+    fun `superseded Gecko show cannot post after newer show begins`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        val dispatcher = buildDispatcher()
+        val old = dispatcher.beginGeckoNotification(app, "same-tag")
+        dispatcher.beginGeckoNotification(app, "same-tag")
+
+        val result = dispatcher.dispatchGecko(old, app, "Old", null, null)
+
+        assertTrue(result is DispatchResult.Dropped.Superseded)
+        coVerify(exactly = 0) { mockManager.notify(any(), any()) }
+    }
+
+    @Test
+    fun `Gecko close while history save is suspended cannot acknowledge shown`() = runTest {
+        val app = appWith(NotificationPermission.GRANTED)
+        every { isDndActive(any(), any(), any()) } returns false
+        coEvery { countToday(app.id, any()) } returns 0
+        val saveStarted = CompletableDeferred<Unit>()
+        val releaseSave = CompletableDeferred<Unit>()
+        coEvery { saveNotification(any()) } coAnswers {
+            saveStarted.complete(Unit)
+            releaseSave.await()
+            1L
+        }
+        val dispatcher = buildDispatcher()
+        val handle = dispatcher.beginGeckoNotification(app, "race-tag")
+
+        val result = async { dispatcher.dispatchGecko(handle, app, "Title", "Body", null) }
+        saveStarted.await()
+        dispatcher.closeGeckoNotification(app, "race-tag")
+        releaseSave.complete(Unit)
+
+        assertTrue(result.await() is DispatchResult.Dropped.Superseded)
+        coVerify(exactly = 1) { mockManager.cancel(any()) }
+    }
+
 }

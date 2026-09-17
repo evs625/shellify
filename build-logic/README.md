@@ -24,7 +24,7 @@ Without convention plugins, every module would repeat the same 30-line AGP confi
 
 The plugins enforce:
 
-- `compileSdk = 36`, `minSdk = 26`, `targetSdk = 36` (app only) across the board
+- `compileSdk = 37.1`, `minSdk = 26`, `targetSdk = 36` (app only) across the board
 - `JavaVersion.VERSION_17` source/target compatibility
 - `kotlinOptions.jvmTarget = "17"`
 - A consistent default test instrumentation runner
@@ -110,10 +110,12 @@ graph TD
 
 | Setting | Where | Value |
 |---|---|---|
-| `compileSdk` | `AndroidApplicationConventionPlugin`, `AndroidLibraryConventionPlugin` | 36 |
-| `minSdk` | Both Android plugins | 23 |
+| `compileSdk` | `AndroidApplicationConventionPlugin`, `AndroidLibraryConventionPlugin` | 37.1 |
+| `minSdk` | Both Android plugins | 26 |
 | `targetSdk` | Application plugin only | 36 |
 | JVM target | All plugins | 17 |
 | KSP schema output | `:app/build.gradle.kts` `ksp { arg(...) }` | `$projectDir/schemas` |
+
+GeckoView `156.0.20260909172920` declares a minimum compile SDK of `37.1` in its AAR metadata, so both Android convention plugins set API 37 with minor API level 1. This compile-only requirement does not change Shellify's `targetSdk = 36` or `minSdk = 26`.
 
 To change a global SDK level, edit the relevant plugin file and re-sync. The change propagates to all modules that apply the plugin automatically.

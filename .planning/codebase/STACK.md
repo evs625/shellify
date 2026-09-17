@@ -55,7 +55,7 @@
 - `org.json` `20240303` — JSON parsing in `core:domain`, `core:iconpack`
 
 **Browser / WebView Engine:**
-- GeckoView `128.0.20240704121409` (arm64-v8a) — Mozilla-based web engine in `core:engine`
+- GeckoView `156.0.20260909172920` ? Mozilla web-engine API in `core:engine`; runtime natives support arm64-v8a, armeabi-v7a, and x86_64
 - AndroidX WebKit `1.12.1` — WebView compatibility wrapper in `core:engine`, `core:isolation`
 
 **Biometrics & Security:**
@@ -84,8 +84,8 @@
 **KSP:** `2.0.21-1.0.28` — Kotlin Symbol Processing (Room annotation processor)
 
 **Convention Plugins (build-logic/):**
-- `shellify.android.application` → `AndroidApplicationConventionPlugin.kt` — compileSdk 36, minSdk 23, JVM 17
-- `shellify.android.library` → `AndroidLibraryConventionPlugin.kt` — same SDK/JVM settings
+- `shellify.android.application` ? `AndroidApplicationConventionPlugin.kt` ? compileSdk 37.1, minSdk 26, JVM 17
+- `shellify.android.library` ? `AndroidLibraryConventionPlugin.kt` ? same SDK/JVM settings
 - `shellify.compose` → `ComposeConventionPlugin.kt` — Compose compiler plugin
 - `shellify.jvm.library` → `JvmLibraryConventionPlugin.kt` — pure-JVM modules (`:core:domain`)
 - `shellify.ksp` → `KspConventionPlugin.kt` — KSP annotation processing
@@ -106,9 +106,9 @@
 
 | Setting | Value |
 |---------|-------|
-| `minSdk` | 23 (Android 6.0) |
+| `minSdk` | 26 (Android 8.0) |
 | `targetSdk` | 36 |
-| `compileSdk` | 36 |
+| `compileSdk` | 37.1 |
 | Java source/target compatibility | 17 |
 | Kotlin JVM target | 17 |
 
@@ -126,7 +126,7 @@
 | SQLCipher | 4.5.4 | `:core:database` |
 | DataStore Preferences | 1.1.1 | `:core:security`, `:core:isolation`, `:core:theme`, features |
 | OkHttp | 4.12.0 | `:core:engine`, `:core:iconpack`, `:core:pwa`, `:core:translate` |
-| GeckoView (arm64) | 128.0.20240704121409 | `:core:engine` |
+| GeckoView API / runtime | 156.0.20260909172920 | `:core:engine` |
 | WebKit | 1.12.1 | `:core:engine`, `:core:isolation` |
 | Coil Compose + SVG | 2.7.0 | `:core:shortcut`, `:core:ui`, feature modules |
 | Biometric | 1.1.0 | `:core:security` |

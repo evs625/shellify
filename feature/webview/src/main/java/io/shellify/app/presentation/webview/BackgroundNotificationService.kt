@@ -12,8 +12,10 @@ import android.view.View
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import io.shellify.app.core.engine.BrowserEngineCallback
-import io.shellify.app.core.engine.ProxyConfig
+import io.shellify.app.core.engine.GeckoNotificationCallback
 import io.shellify.app.core.engine.NotificationDelegateFactory
+import io.shellify.app.core.engine.ProxyConfig
+import io.shellify.app.core.engine.createGeckoWebNotificationDelegate
 import io.shellify.app.domain.model.NotificationPermission
 import io.shellify.app.domain.model.WebApp
 import io.shellify.core.ui.R
@@ -25,8 +27,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
-import org.mozilla.geckoview.WebNotification
-import org.mozilla.geckoview.WebNotificationDelegate
 
 class BackgroundNotificationService : Service() {
 
@@ -110,13 +110,7 @@ class BackgroundNotificationService : Service() {
             val proxyConfig = if (webApp.useTor) ProxyConfig.Socks5("127.0.0.1", 9050) else ProxyConfig.None
             val runtime = provider.geckoEngineManager.getRuntime(proxyConfig)
 
-            runtime.setWebNotificationDelegate(object : WebNotificationDelegate {
-                override fun onShowNotification(notification: WebNotification) {
-                    val title = notification.title ?: return
-                    cb.onNotificationReceived(title, notification.text, notification.imageUrl, notification.tag)
-                }
-                override fun onCloseNotification(notification: WebNotification) = Unit
-            })
+            runtime.setWebNotificationDelegate(createGeckoWebNotificationDelegate(cb))
 
             val settings = GeckoSessionSettings.Builder()
                 .contextId(webApp.isolationId)
@@ -133,9 +127,27 @@ class BackgroundNotificationService : Service() {
     }
 
     private fun buildCallback(webApp: WebApp, dispatcher: PwaNotificationDispatcher): BrowserEngineCallback =
-        object : BrowserEngineCallback {
+        object : BrowserEngineCallback, GeckoNotificationCallback {
             override fun onNotificationReceived(title: String, body: String?, iconUrl: String?, tag: String?) {
                 scope.launch { dispatcher.dispatch(webApp, title, body, iconUrl, tag) }
+            }
+            override fun onGeckoNotificationReceived(
+                title: String,
+                body: String?,
+                iconUrl: String?,
+                tag: String,
+                onDisplayed: (Boolean) -> Unit,
+            ) {
+                val handle = dispatcher.beginGeckoNotification(webApp, tag)
+                scope.launch {
+                    val result = dispatcher.dispatchGecko(handle, webApp, title, body, iconUrl)
+                    val displayed = result is PwaNotificationDispatcher.DispatchResult.Posted
+                    if (!displayed) dispatcher.finishGeckoNotification(handle)
+                    onDisplayed(displayed)
+                }
+            }
+            override fun onGeckoNotificationClosed(tag: String) {
+                dispatcher.closeGeckoNotification(webApp, tag)
             }
             override fun onNotificationPermissionRequested(onResult: (Boolean) -> Unit) {
                 // Background — no dialog available; respect the stored permission.
